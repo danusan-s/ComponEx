@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/AimTrain.dir/link.d CMakeFiles/AimTrain.dir/src/aim_system.cpp.o CMakeFiles/AimTrain.dir/src/main.cpp.o CMakeFiles/AimTrain.dir/src/player_controller.cpp.o -o AimTrain  ../engine/libComponEng.a /usr/lib/libglfw.so.3.4 /usr/lib/libGL.so
