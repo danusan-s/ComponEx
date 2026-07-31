@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/PlanetarySim.dir/link.d CMakeFiles/PlanetarySim.dir/src/camera_controller.cpp.o CMakeFiles/PlanetarySim.dir/src/gravity_system.cpp.o CMakeFiles/PlanetarySim.dir/src/main.cpp.o -o PlanetarySim  ../engine/libComponEng.a /usr/lib/libglfw.so.3.4 /usr/lib/libGL.so
