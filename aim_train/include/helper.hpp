@@ -1,9 +1,9 @@
 #pragma once
 
-#include "componeng/components/collider_component.hpp"
-#include "componeng/components/material_component.hpp"
-#include "componeng/components/mesh_component.hpp"
-#include "componeng/components/transform_component.hpp"
+#include "componeng/core/transform_component.hpp"
+#include "componeng/physics/collider_component.hpp"
+#include "componeng/renderer/component/material_component.hpp"
+#include "componeng/renderer/component/mesh_component.hpp"
 #include "componeng/ecs/world.hpp"
 #include "orb_component.hpp"
 #include <cmath>
@@ -46,13 +46,12 @@ static inline void spawnOrb(ecs::World &world) {
       OrbComponent{std::sqrt(x * x + z * z),
                    (distDir(gen) ? 1.0f : -1.0f) * s * 0.4f, std::atan2(z, x),
                    y},
-      components::MeshComponent{.meshName = "sphere"},
-      components::TransformComponent{.position = core::Vec3(x, y, z),
+      componeng::renderer::MeshComponent{.meshName = "sphere"},
+      componeng::core::TransformComponent{.position = core::Vec3(x, y, z),
                                      .scale = core::Vec3(s)},
-      components::MaterialComponent{.color = core::Vec3(0.0f, 1.0f, 1.0f),
-                                    .textureName = "white",
-                                    .shaderName = "default"},
-      components::ColliderComponent{
-          .type = components::ColliderType::Sphere,
-          .transform = components::TransformComponent{.scale = core::Vec3(1)}});
+      componeng::renderer::MaterialComponent{.materialName = "default_diffuse"},
+      componeng::renderer::ColorComponent{.color = core::Vec4(0.0f, 1.0f, 1.0f, 1.0f)},
+      componeng::physics::ColliderComponent{
+          .type = componeng::physics::ColliderType::Sphere,
+          .transform = componeng::core::TransformComponent{.scale = core::Vec3(1)}});
 }

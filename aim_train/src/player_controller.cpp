@@ -2,21 +2,21 @@
 
 #include <imgui/imgui.h>
 
-#include "componeng/components/collider_component.hpp"
-#include "componeng/components/rigidbody_component.hpp"
-#include "componeng/components/transform_component.hpp"
+#include "componeng/camera/main_camera.hpp"
 #include "componeng/core/debug_ui.hpp"
+#include "componeng/core/transform_component.hpp"
 #include "componeng/core/types.hpp"
 #include "componeng/ecs/world.hpp"
-#include "componeng/resources/action_state.hpp"
-#include "componeng/resources/input_state.hpp"
-#include "componeng/resources/main_camera.hpp"
+#include "componeng/input/action_state.hpp"
+#include "componeng/input/input_state.hpp"
+#include "componeng/physics/collider_component.hpp"
+#include "componeng/physics/rigidbody_component.hpp"
 
 namespace aim_train {
 
 using namespace componeng;
 
-static void getCameraVectors(const components::TransformComponent &t,
+static void getCameraVectors(const core::TransformComponent &t,
                              core::Vec3 &front, core::Vec3 &right) {
   float cp = cos(core::radians(t.rotation.x));
   float sp = sin(core::radians(t.rotation.x));
@@ -31,26 +31,26 @@ void PlayerController::onCreate(const ecs::SystemState &state) {
   ecs::EntityID player = state.world->createEntity();
   state.world->addComponents(
       player,
-      components::TransformComponent{.position = core::Vec3(0, 1.5f, 0),
+      core::TransformComponent{.position = core::Vec3(0, 1.5f, 0),
                                      .scale = core::Vec3(0.5f, 1.0f, 0.5f)},
-      components::RigidBodyComponent{
-          .type = components::RigidBodyComponent::Type::Dynamic,
+      physics::RigidBodyComponent{
+          .type = physics::RigidBodyComponent::Type::Dynamic,
           .velocity = core::Vec3(0, 0, 0),
           .mass = 100.0f,
           .restitution = 0.0f},
-      components::ColliderComponent{.type = components::ColliderType::Box});
+      physics::ColliderComponent{.type = physics::ColliderType::Box});
 
   m_playerEntity = player;
 }
 
 void PlayerController::onUpdate(const ecs::SystemState &state) {
-  auto &input = state.world->get_resource<resources::InputState>();
-  auto &actions = state.world->get_resource<resources::ActionState>();
-  auto &mainCam = state.world->get_resource<resources::MainCamera>();
+  auto &input = state.world->getResource<input::InputState>();
+  auto &actions = state.world->getResource<input::ActionState>();
+  auto &mainCam = state.world->getResource<camera::MainCamera>();
   auto &playerTransform =
-      state.world->getComponent<components::TransformComponent>(m_playerEntity);
+      state.world->getComponent<core::TransformComponent>(m_playerEntity);
   auto &cameraTransform =
-      state.world->getComponent<components::TransformComponent>(mainCam.entity);
+      state.world->getComponent<core::TransformComponent>(mainCam.entity);
 
   // Mouse look
   playerTransform.rotation.y += input.getMouseDeltaX() * m_sensitivity / 10.0f;
@@ -64,19 +64,19 @@ void PlayerController::onUpdate(const ecs::SystemState &state) {
 
   // Movement
   float speed = 10.0f * state.deltaTime;
-  if (actions.down(resources::Action::Sprint))
+  if (actions.down(input::Action::Sprint))
     speed *= 2.0f;
 
   core::Vec3 front, right;
   getCameraVectors(playerTransform, front, right);
 
-  if (actions.down(resources::Action::MoveForward))
+  if (actions.down(input::Action::MoveForward))
     playerTransform.position += front * speed;
-  if (actions.down(resources::Action::MoveBackward))
+  if (actions.down(input::Action::MoveBackward))
     playerTransform.position -= front * speed;
-  if (actions.down(resources::Action::MoveLeft))
+  if (actions.down(input::Action::MoveLeft))
     playerTransform.position -= right * speed;
-  if (actions.down(resources::Action::MoveRight))
+  if (actions.down(input::Action::MoveRight))
     playerTransform.position += right * speed;
 
   cameraTransform.position =

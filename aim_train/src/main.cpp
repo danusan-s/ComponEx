@@ -1,13 +1,14 @@
 #include "componeng/core/engine.hpp"
 #include "componeng/core/game.hpp"
 
-#include "componeng/components/material_component.hpp"
-#include "componeng/components/mesh_component.hpp"
-#include "componeng/components/rigidbody_component.hpp"
-#include "componeng/components/transform_component.hpp"
+#include "componeng/audio/audio_manager.hpp"
+#include "componeng/camera/main_camera.hpp"
+#include "componeng/core/transform_component.hpp"
 #include "componeng/ecs/world.hpp"
-#include "componeng/renderer/asset_manager.hpp"
-#include "componeng/resources/main_camera.hpp"
+#include "componeng/physics/collider_component.hpp"
+#include "componeng/physics/rigidbody_component.hpp"
+#include "componeng/renderer/component/material_component.hpp"
+#include "componeng/renderer/component/mesh_component.hpp"
 #include "componeng/utils/utils.hpp"
 
 #include "aim_system.hpp"
@@ -15,11 +16,13 @@
 #include "orb_component.hpp"
 #include "player_controller.hpp"
 
+using namespace componeng::audio;
+using namespace componeng::camera;
 using namespace componeng::core;
-using namespace componeng::components;
 using namespace componeng::ecs;
+using namespace componeng::input;
+using namespace componeng::physics;
 using namespace componeng::renderer;
-using namespace componeng::resources;
 using namespace componeng::utils;
 
 constexpr int kOrbCount = 15;
@@ -37,13 +40,14 @@ public:
     world.registerSystem<aim_train::PlayerController>(SystemGroup::Simulation);
     world.registerSystem<aim_train::AimSystem>(SystemGroup::Simulation);
 
-    auto &assetManager = world.get_resource<AssetManager>();
-    assetManager.loadAudio(Utils::getAssetPath("assets/audio/boop.wav").c_str(),
-                           "boop");
-    assetManager.loadAudio(Utils::getAssetPath("assets/audio/gun.wav").c_str(),
-                           "gunshot");
+    auto &audioManager = world.getResource<AudioManager>();
 
-    auto &mainCam = world.get_resource<MainCamera>();
+    audioManager.registerSound(
+        Utils::getAssetPath("assets/audio/boop.wav").c_str(), "boop");
+    audioManager.registerSound(
+        Utils::getAssetPath("assets/audio/gun.wav").c_str(), "gunshot");
+
+    auto &mainCam = world.getResource<MainCamera>();
     auto &t = world.getComponent<TransformComponent>(mainCam.entity);
     t.position = kCameraPos;
     t.rotation = kCameraRot;
@@ -54,9 +58,8 @@ public:
         floor, MeshComponent{.meshName = "cube"},
         TransformComponent{.position = Vec3(0, -0.1f, 0),
                            .scale = Vec3(kFloorSize, 0.2f, kFloorSize)},
-        MaterialComponent{.color = kFloorColor,
-                          .textureName = "white",
-                          .shaderName = "default"},
+        MaterialComponent{.materialName = "default_diffuse"},
+        ColorComponent{.color = Vec4(kFloorColor, 1.0f)},
         RigidBodyComponent{.type = RigidBodyComponent::Type::Static,
                            .velocity = Vec3(0, 0, 0),
                            .mass = 0.0f,

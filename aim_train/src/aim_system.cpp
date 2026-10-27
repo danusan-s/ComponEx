@@ -9,14 +9,14 @@
 
 #include <imgui/imgui.h>
 
-#include "componeng/components/collider_component.hpp"
-#include "componeng/components/transform_component.hpp"
+#include "componeng/audio/audio_manager.hpp"
+#include "componeng/camera/main_camera.hpp"
 #include "componeng/core/debug_ui.hpp"
+#include "componeng/core/transform_component.hpp"
 #include "componeng/ecs/world.hpp"
+#include "componeng/input/input_state.hpp"
+#include "componeng/physics/collider_component.hpp"
 #include "componeng/renderer/asset_manager.hpp"
-#include "componeng/resources/audio_engine.hpp"
-#include "componeng/resources/input_state.hpp"
-#include "componeng/resources/main_camera.hpp"
 
 namespace aim_train {
 
@@ -68,17 +68,17 @@ bool raySphereIntersect(core::Vec3 origin, core::Vec3 dir, core::Vec3 center,
 }
 
 void AimSystem::onUpdate(const ecs::SystemState &state) {
-  auto &input = state.world->get_resource<resources::InputState>();
-  auto &mainCam = state.world->get_resource<resources::MainCamera>();
+  auto &input = state.world->getResource<input::InputState>();
+  auto &mainCam = state.world->getResource<camera::MainCamera>();
   auto &camTransform =
-      state.world->getComponent<components::TransformComponent>(mainCam.entity);
+      state.world->getComponent<core::TransformComponent>(mainCam.entity);
 
   drawCrosshair();
   core::DebugUI::addValue("Score", static_cast<float>(m_score));
 
   float dt = state.deltaTime;
-  state.world->query<components::TransformComponent, OrbComponent>().each(
-      [dt](components::TransformComponent &t, OrbComponent &o) {
+  state.world->query<core::TransformComponent, OrbComponent>().each(
+      [dt](core::TransformComponent &t, OrbComponent &o) {
         o.phase += o.speed * dt;
         t.position.x = cos(o.phase) * o.radius;
         t.position.z = sin(o.phase) * o.radius;
@@ -98,11 +98,11 @@ void AimSystem::onUpdate(const ecs::SystemState &state) {
   };
   std::vector<Target> targets;
 
-  auto q = state.world->query<components::TransformComponent,
-                              components::ColliderComponent, OrbComponent>();
-  q.eachWithEntity([&](ecs::EntityID entity, components::TransformComponent &t,
-                       components::ColliderComponent &c, OrbComponent &) {
-    if (c.type == components::ColliderType::Sphere) {
+  auto q = state.world->query<core::TransformComponent,
+                              physics::ColliderComponent, OrbComponent>();
+  q.eachWithEntity([&](ecs::EntityID entity, core::TransformComponent &t,
+                       physics::ColliderComponent &c, OrbComponent &) {
+    if (c.type == physics::ColliderType::Sphere) {
       targets.push_back({entity, t.position + c.transform.position,
                          t.scale.x * c.transform.scale.x});
     }
@@ -120,19 +120,28 @@ void AimSystem::onUpdate(const ecs::SystemState &state) {
       hitEntity = target.id;
     }
   }
-  auto &assetManager = state.world->get_resource<renderer::AssetManager>();
-  auto &audioEngine = state.world->get_resource<resources::AudioEngine>();
-  auto hitSoundPath = assetManager.getAudio(assetManager.getAudioID("boop"));
-  auto shotSoundPath =
-      assetManager.getAudio(assetManager.getAudioID("gunshot"));
+  auto &assetManager = state.world->getResource<renderer::AssetManager>();
+  auto &audioEngine = state.world->getResource<audio::AudioManager>();
+  auto hitSound = audioEngine.createSound("boop");
+  auto shotSound = audioEngine.createSound("gunshot");
 
-  audioEngine.playSoundFromFile(shotSoundPath, rayOrigin.x, rayOrigin.y,
-                                rayOrigin.z, 0.3f, 1.0f, false, 1.0f, 100.0f);
+  audioEngine.getSound(shotSound)
+      .setPosition(rayOrigin.x, rayOrigin.y, rayOrigin.z)
+      .setVolume(0.8f)
+      .setPitch(1.0f)
+      .setLooping(false)
+      .set3D(1.0f, 100.0f)
+      .play();
 
   if (hitEntity != ecs::INVALID_ENTITY) {
     core::Vec3 hitPos = rayOrigin + rayDir * closestT;
-    audioEngine.playSoundFromFile(hitSoundPath, hitPos.x, hitPos.y, hitPos.z,
-                                  0.8f, 1.0f, false, 1.0f, 100.0f);
+    audioEngine.getSound(hitSound)
+        .setPosition(hitPos.x, hitPos.y, hitPos.z)
+        .setVolume(0.8f)
+        .setPitch(1.0f)
+        .setLooping(false)
+        .set3D(1.0f, 100.0f)
+        .play();
     state.world->destroyEntity(hitEntity);
     spawnOrb(*state.world);
     ++m_score;
