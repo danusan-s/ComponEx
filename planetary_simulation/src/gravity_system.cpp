@@ -1,15 +1,16 @@
 #include "gravity_system.hpp"
 #include "celestial_component.hpp"
 
-#include "componeng/components/rigidbody_component.hpp"
-#include "componeng/components/transform_component.hpp"
+#include "componeng/core/transform_component.hpp"
 #include "componeng/core/types.hpp"
 #include "componeng/ecs/world.hpp"
+#include "componeng/physics/rigidbody_component.hpp"
 
 namespace planetary_sim {
 
 using namespace componeng;
-using namespace components;
+using namespace componeng::core;
+using namespace componeng::physics;
 
 const float G = 1e-3f; // Gravitational constant (scaled for simulation)
 
@@ -36,8 +37,8 @@ void GravitySystem::onUpdate(const ecs::SystemState &state) {
 
       // Calculate the gravitational force between the two celestial bodies
       core::Vec3 direction = transformB.position - transformA.position;
-      float distanceSquared = glm::dot(direction, direction);
-      float distance = glm::sqrt(distanceSquared);
+      float distanceSquared = core::dot(direction, direction);
+      float distance = std::sqrt(distanceSquared);
 
       if (distance > 0.0f) {
         core::Vec3 normalizedDirection = direction / distance;

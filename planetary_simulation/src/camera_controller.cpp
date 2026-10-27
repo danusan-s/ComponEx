@@ -2,19 +2,19 @@
 
 #include <imgui/imgui.h>
 
-#include "componeng/components/transform_component.hpp"
+#include "componeng/camera/main_camera.hpp"
 #include "componeng/core/debug_ui.hpp"
+#include "componeng/core/transform_component.hpp"
 #include "componeng/core/types.hpp"
 #include "componeng/ecs/world.hpp"
-#include "componeng/resources/action_state.hpp"
-#include "componeng/resources/input_state.hpp"
-#include "componeng/resources/main_camera.hpp"
+#include "componeng/input/action_state.hpp"
+#include "componeng/input/input_state.hpp"
 
 namespace planetary_sim {
 
 using namespace componeng;
 
-static void getCameraVectors(const components::TransformComponent &t,
+static void getCameraVectors(const core::TransformComponent &t,
                              core::Vec3 &front, core::Vec3 &right) {
   float cp = cos(core::radians(t.rotation.x));
   float sp = sin(core::radians(t.rotation.x));
@@ -26,11 +26,11 @@ static void getCameraVectors(const components::TransformComponent &t,
 }
 
 void CameraController::onUpdate(const ecs::SystemState &state) {
-  auto &input = state.world->get_resource<resources::InputState>();
-  auto &actions = state.world->get_resource<resources::ActionState>();
-  auto &mainCam = state.world->get_resource<resources::MainCamera>();
+  auto &input = state.world->getResource<input::InputState>();
+  auto &actions = state.world->getResource<input::ActionState>();
+  auto &mainCam = state.world->getResource<camera::MainCamera>();
   auto &t =
-      state.world->getComponent<components::TransformComponent>(mainCam.entity);
+      state.world->getComponent<core::TransformComponent>(mainCam.entity);
 
   t.rotation.y += input.getMouseDeltaX() * m_sensitivity / 10.0f;
   t.rotation.x -= input.getMouseDeltaY() * m_sensitivity / 10.0f;
@@ -42,23 +42,23 @@ void CameraController::onUpdate(const ecs::SystemState &state) {
     t.rotation.x = -PITCH_LIMIT;
 
   float speed = m_moveSpeed * state.deltaTime;
-  if (actions.down(resources::Action::Sprint))
+  if (actions.down(input::Action::Sprint))
     speed *= 2.0f;
 
   core::Vec3 front, right;
   getCameraVectors(t, front, right);
 
-  if (actions.down(resources::Action::MoveForward))
+  if (actions.down(input::Action::MoveForward))
     t.position += front * speed;
-  if (actions.down(resources::Action::MoveBackward))
+  if (actions.down(input::Action::MoveBackward))
     t.position -= front * speed;
-  if (actions.down(resources::Action::MoveLeft))
+  if (actions.down(input::Action::MoveLeft))
     t.position -= right * speed;
-  if (actions.down(resources::Action::MoveRight))
+  if (actions.down(input::Action::MoveRight))
     t.position += right * speed;
-  if (actions.down(resources::Action::Jump))
+  if (actions.down(input::Action::Jump))
     t.position.y += speed;
-  if (actions.down(resources::Action::Crouch))
+  if (actions.down(input::Action::Crouch))
     t.position.y -= speed;
 
   core::DebugUI::addValue("Planets", 5.0f);

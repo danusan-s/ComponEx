@@ -1,16 +1,17 @@
 #include "componeng/core/engine.hpp"
 #include "componeng/core/game.hpp"
 
-#include "componeng/components/collider_component.hpp"
-#include "componeng/components/material_component.hpp"
-#include "componeng/components/mesh_component.hpp"
-#include "componeng/components/rigidbody_component.hpp"
-#include "componeng/components/transform_component.hpp"
+#include "componeng/audio/audio_manager.hpp"
+#include "componeng/camera/main_camera.hpp"
+#include "componeng/core/transform_component.hpp"
 #include "componeng/core/types.hpp"
 #include "componeng/ecs/world.hpp"
+#include "componeng/physics/collider_component.hpp"
+#include "componeng/physics/physics_config.hpp"
 #include "componeng/physics/physics_system.hpp"
-#include "componeng/resources/main_camera.hpp"
-#include "componeng/resources/physics_config.hpp"
+#include "componeng/physics/rigidbody_component.hpp"
+#include "componeng/renderer/component/material_component.hpp"
+#include "componeng/renderer/component/mesh_component.hpp"
 #include "componeng/utils/utils.hpp"
 
 #include "camera_controller.hpp"
@@ -18,23 +19,26 @@
 #include "collision_system.hpp"
 #include "gravity_system.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <random>
 
+using namespace componeng::camera;
 using namespace componeng::core;
-using namespace componeng::renderer;
-using namespace componeng::components;
 using namespace componeng::ecs;
-using namespace componeng::utils;
 using namespace componeng::physics;
+using namespace componeng::renderer;
+using namespace componeng::utils;
 using namespace planetary_sim;
 
-constexpr int kBodyCount = 10;
-constexpr float kPositionRange = 20.0f;
+constexpr int kBodyCount = 100;
+constexpr float kPositionRange = 100.0f;
 constexpr float kMassMin = 1.0f;
 constexpr float kMassMax = 500.0f;
 constexpr float kSpeedScale = 2.0f;
-constexpr float kScaleMin = 0.15f;
-constexpr float kScaleMax = 1.0f;
+// Toned down from previous 0.15/1.0, now size is derived from mass
+constexpr float kScaleMin = 0.12f;
+constexpr float kScaleMax = 0.80f;
 
 static std::mt19937 &rng() {
   static std::mt19937 gen(std::random_device{}());
@@ -82,7 +86,6 @@ static void generateRandomBody(World &world) {
   std::uniform_real_distribution<float> posDist(-kPositionRange,
                                                 kPositionRange);
   std::uniform_real_distribution<float> massDist(kMassMin, kMassMax);
-  std::uniform_real_distribution<float> scaleDist(kScaleMin, kScaleMax);
   std::uniform_real_distribution<float> speedDist(0.5f, 1.5f);
   std::uniform_real_distribution<float> rotDist(-2.0f, 2.0f);
 
@@ -92,7 +95,18 @@ static void generateRandomBody(World &world) {
     position = normalize(position) * 5.0f;
 
   float mass = massDist(rng());
-  float scale = scaleDist(rng());
+  // Size related to mass: volume ~ mass (constant density) => radius ~
+  // cbrt(mass) Map mass range to scale range with cbrt shaping, toned down
+  // overall.
+  float normalized = (mass - kMassMin) / (kMassMax - kMassMin); // 0..1
+  float t = std::cbrt(normalized); // cbrt gives more variation at low mass
+  float scale = kScaleMin + t * (kScaleMax - kScaleMin);
+  // Add small jitter so same mass doesn't give identical size
+  {
+    std::uniform_real_distribution<float> jitter(0.92f, 1.08f);
+    scale *= jitter(rng());
+    scale = std::clamp(scale, kScaleMin * 0.8f, kScaleMax * 1.1f);
+  }
   Vec3 color = randomColor();
 
   Vec3 up;
@@ -114,8 +128,8 @@ static void generateRandomBody(World &world) {
       ColliderComponent{.type = ColliderType::Sphere},
       MeshComponent{.meshName = "sphere"},
       TransformComponent{.position = position, .scale = Vec3(scale)},
-      MaterialComponent{
-          .color = color, .textureName = "white", .shaderName = "default"});
+      MaterialComponent{.materialName = "default_diffuse"},
+      ColorComponent{.color = Vec4(color, 1.0f)});
 }
 
 class PlanetarySim : public IGame {
@@ -131,17 +145,16 @@ public:
     world
         .addSystemDependencies<planetary_sim::CollisionSystem, PhysicsSystem>();
 
-    auto &assetManager = world.get_resource<AssetManager>();
-    assetManager.loadAudio(Utils::getAssetPath("assets/audio/boop.wav").c_str(),
-                           "boop");
+    auto &audioManager = world.getResource<componeng::audio::AudioManager>();
+    audioManager.registerSound(
+        Utils::getAssetPath("assets/audio/boop.wav").c_str(), "boop");
 
-    auto &mainCam = world.get_resource<componeng::resources::MainCamera>();
+    auto &mainCam = world.getResource<MainCamera>();
     auto &camT = world.getComponent<TransformComponent>(mainCam.entity);
     camT.position = Vec3(0, 3, 15);
     camT.rotation = Vec3(-10, -90, 0);
 
-    auto &physicsConfig =
-        world.get_resource<componeng::resources::PhysicsConfig>();
+    auto &physicsConfig = world.getResource<PhysicsConfig>();
     physicsConfig.gravity = Vec3(0, 0, 0);
 
     EntityID star = world.createEntity();
@@ -153,9 +166,8 @@ public:
         MeshComponent{.meshName = "sphere"},
         TransformComponent{.position = Vec3(0, 0, 0), .scale = Vec3(2.0f)},
         ColliderComponent{.type = ColliderType::Sphere},
-        MaterialComponent{.color = Vec3(1.0f, 0.8f, 0.2f),
-                          .textureName = "white",
-                          .shaderName = "default"});
+        MaterialComponent{.materialName = "default_diffuse"},
+        ColorComponent{.color = Vec4(1.0f, 0.8f, 0.2f, 1.0f)});
 
     for (int i = 0; i < kBodyCount; ++i) {
       generateRandomBody(world);
