@@ -37,8 +37,6 @@ TEXTURES = {
     "stump": (tex("tree_stump_01", "tree_stump_01", "diff"), tex("tree_stump_01", "tree_stump_01", "nor_gl"), tex("tree_stump_01", "tree_stump_01", "arm"), None),
     "boulder": (tex("boulder_01", "boulder_01", "diff"), tex("boulder_01", "boulder_01", "nor_gl"), tex("boulder_01", "boulder_01", "arm"), None),
     "rockmoss": (tex("rock_moss_set_01", "rock_moss_set_01", "diff"), tex("rock_moss_set_01", "rock_moss_set_01", "nor_gl"), tex("rock_moss_set_01", "rock_moss_set_01", "rough"), None),
-    "fern": (tex("fern_02", "fern_02", "diff"), None, None, os.path.join(M, "fern_02", "alpha", "alpha.png")),
-    "shrub": (tex("shrub_01", "shrub_01", "diff"), None, None, os.path.join(M, "shrub_01", "alpha", "alpha.png")),
 }
 
 

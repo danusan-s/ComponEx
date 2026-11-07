@@ -5,13 +5,13 @@
 #include "forest_config.hpp"
 #include "forest_world.hpp"
 #include "grass.hpp"
+#include "lens_flare.hpp"
 #include "player_system.hpp"
 #include "species_data.hpp"
 
 #include "componeng/camera/camera_component.hpp"
 #include "componeng/camera/camera_system.hpp"
 #include "componeng/camera/main_camera.hpp"
-#include "componeng/core/debug_ui.hpp"
 #include "componeng/core/transform_component.hpp"
 #include "componeng/ecs/world.hpp"
 #include "componeng/renderer/asset_manager.hpp"
@@ -24,10 +24,8 @@
 #include "componeng/resources/fog.hpp"
 #include "componeng/utils/logger.hpp"
 
-#include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <random>
 #include <string>
 
 namespace forest {
@@ -111,9 +109,7 @@ void spawnProps(ecs::World &world, const ForestWorld &fw) {
                                 .scale = Vec3(p.scale)};
     LodRanges ranges{{60.0f, 170.0f, 0.0f}};
     std::string name = m.name;
-    if (name.rfind("fern", 0) == 0) ranges = {{58.0f, 0.0f, 0.0f}};
-    else if (name == "shrub") ranges = {{45.0f, 110.0f, 0.0f}};
-    else if (name == "boulder" || name.rfind("rock", 0) == 0) ranges = {{80.0f, 260.0f, 0.0f}};
+    if (name == "boulder" || name.rfind("rock", 0) == 0) ranges = {{80.0f, 260.0f, 0.0f}};
     std::string material = name + "_body";
     spawnPart(world, m.name, "body", material.c_str(), tf, Vec4(p.tint, p.sunVis), ranges);
   }
@@ -123,12 +119,21 @@ void spawnProps(ecs::World &world, const ForestWorld &fw) {
 // places each of them (see grass.vert). Culling is left off because the shader,
 // not the mesh's bounds, decides where the tufts land.
 void spawnGrass(ecs::World &world) {
-  if (std::getenv("FOREST_NO_GRASS")) return;  // TEMP measurement
   ecs::EntityID field = world.createEntity();
   world.addComponents(field, core::TransformComponent{},
                       renderer::MeshComponent{.meshName = "grass_tuft"},
                       renderer::MaterialComponent{.materialName = "grass"},
                       renderer::ProceduralInstancesComponent{.count = GrassField::kTuftCount});
+}
+
+// The lens flare is one entity drawing kFlareElements screen-space sprites; the
+// shader positions them from the sun's direction (see flare.vert).
+void spawnLensFlare(ecs::World &world) {
+  ecs::EntityID flare = world.createEntity();
+  world.addComponents(flare, core::TransformComponent{},
+                      renderer::MeshComponent{.meshName = "flare_quad"},
+                      renderer::MaterialComponent{.materialName = "lens_flare"},
+                      renderer::ProceduralInstancesComponent{.count = kFlareElements});
 }
 
 } // namespace
@@ -138,7 +143,7 @@ void ForestGame::init(ecs::World &world) {
 
   // Haze doubles as the sky's horizon colour, so distant ground fades into it.
   world.setResource(resources::Fog{.color = Vec4(0.55f, 0.68f, 0.86f, 1.0f),
-                                   .density = 0.0040f,
+                                   .density = 0.0070f,
                                    .start = 0.0f,
                                    .end = 1.0f,
                                    .enabled = true});
@@ -155,6 +160,7 @@ void ForestGame::init(ecs::World &world) {
   spawnTrees(world, fw);
   spawnProps(world, fw);
   spawnGrass(world);
+  spawnLensFlare(world);
 
   // --- Sun and sky ---------------------------------------------------------
   ecs::EntityID sun = world.createEntity();
@@ -172,7 +178,7 @@ void ForestGame::init(ecs::World &world) {
                       camera::CameraComponent{.fov = 70.0f,
                                               .aspectRatio = 16.0f / 9.0f,
                                               .nearPlane = 0.12f,
-                                              .farPlane = 1500.0f});
+                                              .farPlane = 450.0f});
   world.setResource(camera::MainCamera{cam});
 
   // FOREST_SPAWN="x,z,yaw,pitch" starts the player somewhere else (for poking at
@@ -192,9 +198,12 @@ void ForestGame::init(ecs::World &world) {
   world.setResource(std::move(fw));
 
   world.registerSystem<PlayerSystem>(ecs::SystemGroup::Simulation);
+  world.registerSystem<LensFlareSystem>(ecs::SystemGroup::Simulation);
   // The camera's matrices must be built from where the player ended up this
   // frame, not last frame.
   world.addSystemDependencies<camera::CameraSystem, PlayerSystem>();
+  // The flare reads where the player ended up this frame.
+  world.addSystemDependencies<LensFlareSystem, PlayerSystem>();
 }
 
 void ForestGame::shutdown(ecs::World &) {

@@ -27,8 +27,6 @@ uniform vec3 skyAmbient;
 uniform vec3 groundAmbient;
 // How much the card normal is replaced by the crown normal (1 = pure volume).
 uniform float crownBlend;
-// Ferns and shrubs sit on the ground and take its shade; trees do not.
-uniform float groundCover;
 
 vec3 aces(vec3 x) {
     x *= 0.8;
@@ -67,15 +65,15 @@ void main()
     // Wrapped diffuse: leaves scatter light, so the terminator is soft.
     float wrap = clamp((dot(Ns, L) + 0.4) / 1.4, 0.0, 1.0);
     // Light reaching the inside of a crown is filtered by the leaves above it.
-    float depth = mix(1.0, mix(0.22, 1.0, smoothstep(0.15, 0.95, CrownT)) *
-                           mix(0.45, 1.0, sqrt(HeightT)), 1.0 - groundCover);
+    float depth = mix(0.22, 1.0, smoothstep(0.15, 0.95, CrownT)) *
+                  mix(0.45, 1.0, sqrt(HeightT));
     float vis = Vis * depth;
 
     // Backlit leaves glow.
     float back = pow(clamp(dot(V, -L), 0.0, 1.0), 3.0) * (1.0 - wrap * 0.5);
     vec3 direct = lightColor * vis * (albedo * wrap + albedo * vec3(1.0, 0.95, 0.6) * back * 0.9);
 
-    float ao = mix(mix(0.3, 1.0, smoothstep(0.0, 1.0, CrownT)) * mix(0.5, 1.0, HeightT), 0.6, groundCover);
+    float ao = mix(0.3, 1.0, smoothstep(0.0, 1.0, CrownT)) * mix(0.5, 1.0, HeightT);
     vec3 ambient = albedo * mix(groundAmbient, skyAmbient, Ns.y * 0.5 + 0.5) * ao;
 
     vec3 color = applyFog(direct + ambient, FragPos);

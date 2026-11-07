@@ -4,6 +4,7 @@
 
 #include "componeng/core/types.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -65,6 +66,44 @@ private:
   std::vector<std::vector<int>> m_cells;
 };
 
+// A tree's crown as an ellipsoid, for shadow and occlusion tests.
+struct Crown {
+  componeng::core::Vec3 c;
+  float rh, rv;  // horizontal / vertical radius
+  float density; // optical depth per metre of chord
+};
+
+// Spatial hash of crowns: for the lighting bake and the runtime sun query.
+class CrownGrid {
+public:
+  static constexpr float kCell = 16.0f;
+
+  void build(const std::vector<Crown> &crowns, float half) {
+    m_half = half;
+    m_n = int(std::ceil(2.0f * half / kCell)) + 1;
+    m_cells.assign(size_t(m_n) * m_n, {});
+    for (size_t i = 0; i < crowns.size(); ++i) {
+      m_cells[size_t(cellOf(crowns[i].c.z)) * m_n + cellOf(crowns[i].c.x)].push_back(int(i));
+    }
+  }
+
+  template <class F> void near(float x, float z, int cells, F &&fn) const {
+    int ci = cellOf(x), cj = cellOf(z);
+    for (int j = std::max(cj - cells, 0); j <= std::min(cj + cells, m_n - 1); ++j)
+      for (int i = std::max(ci - cells, 0); i <= std::min(ci + cells, m_n - 1); ++i)
+        for (int id : m_cells[size_t(j) * m_n + i]) fn(id);
+  }
+
+private:
+  int cellOf(float v) const {
+    int c = int(std::floor((v + m_half) / kCell));
+    return std::clamp(c, 0, m_n - 1);
+  }
+  float m_half = 0.0f;
+  int m_n = 0;
+  std::vector<std::vector<int>> m_cells;
+};
+
 struct TreePlacement {
   int species;  // index into kTreeSpecies
   componeng::core::Vec3 pos;
@@ -90,7 +129,18 @@ struct ForestWorld {
   std::vector<PropPlacement> props;
   componeng::core::Vec3 sunDir;  // unit, towards the sun
 
+  // Every tree's crown ellipsoid and a grid over them, kept after the bake.
+  // crowns[i] belongs to trees[i].
+  std::vector<Crown> crowns;
+  CrownGrid crownGrid;
+
   void build();
+
+  // Fraction of the sun's light that reaches `eye` along the ray to the sun:
+  // 0 behind terrain or a trunk, attenuated by tree crowns. For things that
+  // must know whether the sun can be seen (the lens flare); the engine offers
+  // no depth-buffer read-back or occlusion query to ask the GPU instead.
+  float sunVisibility(const componeng::core::Vec3 &eye) const;
 };
 
 // Index of a named model in kPropModels, or -1.

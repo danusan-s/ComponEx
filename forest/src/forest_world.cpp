@@ -24,13 +24,6 @@ constexpr int kPropCount = int(std::size(kPropModels));
 
 bool isConifer(int species) { return species >= 2; }
 
-// A tree's crown as an ellipsoid, for shadow and occlusion tests.
-struct Crown {
-  Vec3 c;
-  float rh, rv;  // horizontal / vertical radius
-  float density; // optical depth per metre of chord
-};
-
 Crown crownOf(const TreePlacement &t) {
   const TreeSpecies &s = kTreeSpecies[t.species];
   float cy = std::cos(t.yaw * kDeg), sy = std::sin(t.yaw * kDeg);
@@ -75,37 +68,6 @@ template <class F> void parallelFor(int n, F &&fn) {
   }
   for (auto &t : pool) t.join();
 }
-
-// Spatial hash of crowns for the bake.
-class CrownGrid {
-public:
-  static constexpr float kCell = 16.0f;
-
-  void build(const std::vector<Crown> &crowns, float half) {
-    m_half = half;
-    m_n = int(std::ceil(2.0f * half / kCell)) + 1;
-    m_cells.assign(size_t(m_n) * m_n, {});
-    for (size_t i = 0; i < crowns.size(); ++i) {
-      m_cells[size_t(cellOf(crowns[i].c.z)) * m_n + cellOf(crowns[i].c.x)].push_back(int(i));
-    }
-  }
-
-  template <class F> void near(float x, float z, int cells, F &&fn) const {
-    int ci = cellOf(x), cj = cellOf(z);
-    for (int j = std::max(cj - cells, 0); j <= std::min(cj + cells, m_n - 1); ++j)
-      for (int i = std::max(ci - cells, 0); i <= std::min(ci + cells, m_n - 1); ++i)
-        for (int id : m_cells[size_t(j) * m_n + i]) fn(id);
-  }
-
-private:
-  int cellOf(float v) const {
-    int c = int(std::floor((v + m_half) / kCell));
-    return std::clamp(c, 0, m_n - 1);
-  }
-  float m_half = 0.0f;
-  int m_n = 0;
-  std::vector<std::vector<int>> m_cells;
-};
 
 float forestDensity(float x, float z) {
   using namespace noise;
@@ -217,11 +179,9 @@ void placeProps(ForestWorld &w, Rng &rng) {
   const Terrain &t = w.terrain;
   const float limit = t.half() - 20.0f;
 
-  std::vector<int> ferns, rocks;
-  int boulder = propIndex("boulder"), log = propIndex("log"), stump = propIndex("stump"),
-      shrub = propIndex("shrub");
+  std::vector<int> rocks;
+  int boulder = propIndex("boulder"), log = propIndex("log"), stump = propIndex("stump");
   for (int i = 0; i < kPropCount; ++i) {
-    if (std::strncmp(kPropModels[i].name, "fern", 4) == 0) ferns.push_back(i);
     if (std::strncmp(kPropModels[i].name, "rock", 4) == 0) rocks.push_back(i);
   }
 
@@ -246,31 +206,6 @@ void placeProps(ForestWorld &w, Rng &rng) {
     w.props.push_back(p);
     return int(w.props.size()) - 1;
   };
-
-  // Ferns grow in clumps, mostly in the woods.
-  for (int c = 0; c < 5200; ++c) {
-    float cx = rng.range(-limit, limit), cz = rng.range(-limit, limit);
-    float d = forestDensity(cx, cz);
-    if (rng.uni() > 0.15f + 0.85f * d) continue;
-    if (t.normalAt(cx, cz).y < 0.82f) continue;
-    int count = 3 + int(rng.uni() * 7.0f);
-    for (int k = 0; k < count; ++k) {
-      float x = cx + (rng.uni() + rng.uni() - 1.0f) * 3.2f;
-      float z = cz + (rng.uni() + rng.uni() - 1.0f) * 3.2f;
-      if (std::fabs(x) > limit || std::fabs(z) > limit) continue;
-      if (blockedAt(x, z, 0.5f)) continue;
-      int m = ferns[size_t(rng.uni() * float(ferns.size()) * 0.9999f)];
-      place(m, x, z, rng.range(1.3f, 2.5f), 0.02f);
-    }
-  }
-
-  // Shrubs, singly.
-  for (int c = 0; c < 900; ++c) {
-    float x = rng.range(-limit, limit), z = rng.range(-limit, limit);
-    if (rng.uni() > 0.2f + 0.8f * forestDensity(x, z)) continue;
-    if (t.normalAt(x, z).y < 0.85f || blockedAt(x, z, 1.0f)) continue;
-    place(shrub, x, z, rng.range(1.0f, 2.0f), 0.0f);
-  }
 
   // Rocks: more of them on slopes.
   for (int c = 0; c < 2600; ++c) {
@@ -389,10 +324,13 @@ void bakeLighting(ForestWorld &w) {
   Terrain &t = w.terrain;
   const Vec3 L = w.sunDir;
 
-  std::vector<Crown> crowns;
+  // Kept in the world: the runtime sun-visibility query (for the lens flare)
+  // traces the same crowns.
+  std::vector<Crown> &crowns = w.crowns;
+  crowns.clear();
   crowns.reserve(w.trees.size());
   for (const TreePlacement &tp : w.trees) crowns.push_back(crownOf(tp));
-  CrownGrid grid;
+  CrownGrid &grid = w.crownGrid;
   grid.build(crowns, t.half());
 
   // Sun reaching each tree's crown, and each prop, after the other trees.
@@ -457,6 +395,40 @@ int propIndex(const char *name) {
   for (int i = 0; i < kPropCount; ++i)
     if (std::strcmp(kPropModels[i].name, name) == 0) return i;
   return -1;
+}
+
+float ForestWorld::sunVisibility(const Vec3 &eye) const {
+  const Vec3 L = sunDir;
+
+  // Terrain, then the crowns (soft: leaves let some light through).
+  float vis = terrainShadow(terrain, eye, L) * canopyShadow(crownGrid, crowns, eye, L, -1);
+  if (vis <= 0.0f) return 0.0f;
+
+  // Trunks block outright. Each is a vertical cylinder from the tree's base to
+  // its top; test the sun ray against the ones near the eye.
+  const float lh2 = L.x * L.x + L.z * L.z;
+  if (lh2 > 1e-6f) {
+    bool blocked = false;
+    crownGrid.near(eye.x, eye.z, 1, [&](int id) {
+      if (blocked) return;
+      const TreePlacement &tp = trees[size_t(id)];
+      const TreeSpecies &sp = kTreeSpecies[tp.species];
+      float r = std::max(sp.trunkRadius * tp.scale, 0.2f);
+      float dx = eye.x - tp.pos.x, dz = eye.z - tp.pos.z;
+      float b = dx * L.x + dz * L.z;
+      float c = dx * dx + dz * dz - r * r;
+      float disc = b * b - lh2 * c;
+      if (disc <= 0.0f) return;
+      float sq = std::sqrt(disc);
+      float t2 = (-b + sq) / lh2;
+      if (t2 <= 0.0f) return;  // the trunk is behind the ray
+      float t = std::max((-b - sq) / lh2, 0.0f);
+      float y = eye.y + L.y * t;
+      if (y >= tp.pos.y && y <= tp.pos.y + sp.height * tp.scale) blocked = true;
+    });
+    if (blocked) return 0.0f;
+  }
+  return vis;
 }
 
 void ForestWorld::build() {

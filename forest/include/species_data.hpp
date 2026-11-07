@@ -13,7 +13,6 @@ struct TreeSpecies {
 
 struct PropModel {
   const char *name;
-  bool foliage;
   float height, extentX, extentZ;
 };
 
@@ -26,20 +25,15 @@ inline constexpr TreeSpecies kTreeSpecies[] = {
 };
 
 inline constexpr PropModel kPropModels[] = {
-    {"log", false, 1.0544f, 4.0555f, 1.0551f},
-    {"stump", false, 0.5714f, 1.4231f, 1.5913f},
-    {"boulder", false, 1.0012f, 1.2835f, 1.8293f},
-    {"rock1", false, 1.4717f, 2.2354f, 3.3616f},
-    {"rock2", false, 1.2606f, 2.6539f, 3.2652f},
-    {"rock3", false, 1.0981f, 2.1061f, 2.0707f},
-    {"rock4", false, 1.7692f, 2.1297f, 1.9656f},
-    {"rock5", false, 1.2070f, 1.8175f, 2.9989f},
-    {"rock6", false, 1.2600f, 2.1268f, 2.7568f},
-    {"fern_a", true, 0.2868f, 0.5519f, 0.6134f},
-    {"fern_b", true, 0.4246f, 0.9903f, 0.8950f},
-    {"fern_c", true, 0.3487f, 0.8752f, 0.7654f},
-    {"fern_d", true, 0.2131f, 0.5728f, 0.5933f},
-    {"shrub", true, 0.3996f, 2.5650f, 0.2356f},
+    {"log", 1.0544f, 4.0555f, 1.0551f},
+    {"stump", 0.5714f, 1.4231f, 1.5913f},
+    {"boulder", 1.0012f, 1.2835f, 1.8293f},
+    {"rock1", 1.4717f, 2.2354f, 3.3616f},
+    {"rock2", 1.2606f, 2.6539f, 3.2652f},
+    {"rock3", 1.0981f, 2.1061f, 2.0707f},
+    {"rock4", 1.7692f, 2.1297f, 1.9656f},
+    {"rock5", 1.2070f, 1.8175f, 2.9989f},
+    {"rock6", 1.2600f, 2.1268f, 2.7568f},
 };
 
 } // namespace forest

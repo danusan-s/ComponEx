@@ -85,15 +85,6 @@ for i in (1, 2, 3, 4, 5, 6):
         name="rock%d" % i, src="rock_moss_set_01", obj="rock_moss_set_01_rock0%d" % i,
         parts=[dict(name="body", mat="rock_moss_set_01", kind="wood", tex="rockmoss",
                     lods=[dict(ratio=0.25), dict(ratio=0.05), None])]))
-for i, suffix in enumerate("abcd"):
-    PROPS.append(dict(
-        name="fern_" + suffix, src="fern_02", obj="fern_02_" + suffix,
-        parts=[dict(name="body", mat="fern_02", kind="foliage", tex="fern",
-                    lods=[dict(keep=1.0, grow=1.0, ratio=0.5 if suffix in "bc" else 1.0), None, None])]))
-PROPS.append(dict(
-    name="shrub", src="shrub_01", obj=None,
-    parts=[dict(name="body", mat="shrub_01", kind="foliage", tex="shrub",
-                lods=[dict(keep=0.35, grow=1.3, ratio=0.14), dict(keep=0.1, grow=2.2, ratio=0.14), None])]))
 
 # ---------------------------------------------------------------------------
 # Geometry
@@ -102,7 +93,7 @@ _loaded = {}
 
 
 def load_source(src):
-    # Items sharing a source file (fir variants, rocks, ferns) are consecutive,
+    # Items sharing a source file (fir variants, rocks) are consecutive,
     # so only re-import when the file changes.
     if _loaded.get("src") != src:
         bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -333,7 +324,6 @@ def write_header(trees, props):
              "};", "",
              "struct PropModel {",
              "  const char *name;",
-             "  bool foliage;",
              "  float height, extentX, extentZ;",
              "};", "",
              "inline constexpr TreeSpecies kTreeSpecies[] = {"]
@@ -347,9 +337,8 @@ def write_header(trees, props):
             cxx(t["crown_radius"]), cxx(t["crown_bottom"]), cxx(t["crown_top"]), cxx(lo), cxx(hi)))
     lines += ["};", "", "inline constexpr PropModel kPropModels[] = {"]
     for p in props:
-        lines.append('    {"%s", %s, %s, %s, %s},' % (
-            p["name"], "true" if p["parts"][0]["kind"] == "foliage" else "false",
-            cxx(p["height"]), cxx(p["extent"][0]), cxx(p["extent"][1])))
+        lines.append('    {"%s", %s, %s, %s},' % (
+            p["name"], cxx(p["height"]), cxx(p["extent"][0]), cxx(p["extent"][1])))
     lines += ["};", "", "} // namespace forest", ""]
     with open(os.path.join(OUT_INCLUDE, "species_data.hpp"), "w") as fh:
         fh.write("\n".join(lines))

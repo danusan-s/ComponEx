@@ -22,8 +22,6 @@ MODELS = [
     "fir_sapling_medium",
     "dead_tree_trunk_02",
     "tree_stump_01",
-    "fern_02",
-    "shrub_01",
     "rock_moss_set_01",
     "boulder_01",
 ]

@@ -15,7 +15,9 @@
 // A tuft that is not drawn has its vertices collapsed outside the clip volume.
 // The GPU still runs the vertex shader for them (nothing can compact the
 // instance list without compute/indirect draws), so the rejection tests come
-// first and are cheap.
+// first and are cheap: distance, world edge, then whether the tuft is inside
+// the camera's view frustum at all (about 70% of the pool is behind or beside
+// the camera at any moment), and only then the density mask and the rest.
 
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
@@ -54,14 +56,14 @@ uint pcg(uint v) {
     uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
     return (word >> 22u) ^ word;
 }
+// k-th random in [0, 1) for instance `id` (up to 16 per instance).
 float rnd(uint id, uint k) {
-    return float(pcg(id * 9u + k) & 0xFFFFFFu) / 16777216.0;
+    return float(pcg(id * 16u + k) & 0xFFFFFFu) / 16777216.0;
 }
 
-float hash21(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
+// A random for blade `blade` of instance `id`.
+float rndBlade(uint id, uint blade) {
+    return float(pcg(pcg(id) + blade * 2654435761u) & 0xFFFFFFu) / 16777216.0;
 }
 
 float terrainHeight(vec2 xz) {
@@ -76,6 +78,24 @@ float terrainHeight(vec2 xz) {
     // The terrain mesh splits each quad along the (1,0)-(0,1) diagonal.
     if (t.x + t.y <= 1.0) return h00 + t.x * (h10 - h00) + t.y * (h01 - h00);
     return h11 + (1.0 - t.x) * (h01 - h11) + (1.0 - t.y) * (h10 - h11);
+}
+
+// Is a sphere around `center` inside (or touching) the view frustum's four side
+// planes and near plane? The planes come straight out of viewProj's rows, so
+// this needs no extra uniforms. Conservative: the radius covers a whole tuft,
+// blades, lean and wind sway included, so nothing pops at the screen edge.
+bool inView(vec3 center, float radius) {
+    vec4 p = vec4(center, 1.0);
+    vec4 r0 = vec4(viewProj[0][0], viewProj[1][0], viewProj[2][0], viewProj[3][0]);
+    vec4 r1 = vec4(viewProj[0][1], viewProj[1][1], viewProj[2][1], viewProj[3][1]);
+    vec4 r2 = vec4(viewProj[0][2], viewProj[1][2], viewProj[2][2], viewProj[3][2]);
+    vec4 r3 = vec4(viewProj[0][3], viewProj[1][3], viewProj[2][3], viewProj[3][3]);
+    vec4 left = r3 + r0, right = r3 - r0, bottom = r3 + r1, top = r3 - r1, near = r3 + r2;
+    return dot(left, p) >= -radius * length(left.xyz) &&
+           dot(right, p) >= -radius * length(right.xyz) &&
+           dot(bottom, p) >= -radius * length(bottom.xyz) &&
+           dot(top, p) >= -radius * length(top.xyz) &&
+           dot(near, p) >= -radius * length(near.xyz);
 }
 
 void cull() {
@@ -97,13 +117,25 @@ void main()
     float cellSize = period / side;
     vec2 cell = vec2(float(id % uint(side)), float(id / uint(side)));
     vec2 base = (cell + vec2(rnd(id, 0u), rnd(id, 1u))) * cellSize;
-    vec2 d = base - cameraPos.xz;
-    d -= period * floor(d / period + 0.5);
-    vec2 xz = cameraPos.xz + d;
+    // The copy of `base` nearest the camera, as base + a whole number of
+    // periods. Computed from `base` rather than as camera + (base - camera) so
+    // that, while the same copy stays nearest, xz is bit-identical every frame:
+    // the camera's own rounding error must not leak into the tuft's position.
+    vec2 xz = base + period * floor((cameraPos.xz - base) / period + 0.5);
+    vec2 d = xz - cameraPos.xz;
 
     // Cheapest rejections first: too far, or off the edge of the world.
     float dist2 = dot(d, d);
     if (dist2 > fadeEnd * fadeEnd || any(greaterThan(abs(xz), vec2(worldHalf - 6.0)))) {
+        cull();
+        return;
+    }
+
+    // Frustum: most of the pool is behind or beside the camera. The terrain
+    // height is needed for a true position (the side planes tilt with pitch),
+    // and is needed afterwards anyway for every tuft that stays.
+    vec3 root = vec3(xz.x, terrainHeight(xz) - 0.03, xz.y);
+    if (!inView(root + vec3(0.0, 0.8, 0.0), 2.2)) {
         cull();
         return;
     }
@@ -120,7 +152,6 @@ void main()
     float v = 0.82 + 0.3 * rnd(id, 6u);
     vec3 tint = vec3(v * (0.9 + 0.2 * rnd(id, 7u)), v, v * (0.85 + 0.2 * rnd(id, 8u)));
 
-    vec3 root = vec3(xz.x, terrainHeight(xz) - 0.03, xz.y);
     float scale = baseScale * (0.7 + 0.3 * mask.r);
 
     float bladeId = floor(aUV.x);
@@ -129,7 +160,7 @@ void main()
     float size = scale * (1.0 - smoothstep(fadeStart, fadeEnd, sqrt(dist2)));
 
     // Every tuft is turned randomly so the mesh's blade pattern never repeats.
-    float yaw = hash21(root.xz) * 6.2831853;
+    float yaw = rnd(id, 9u) * 6.2831853;
     float cy = cos(yaw), sy = sin(yaw);
     mat2 rot = mat2(cy, sy, -sy, cy);
 
@@ -154,7 +185,7 @@ void main()
     BladeNormal = vec3(nxz.x, aNormal.y, nxz.y);
     Tint = tint;
     Light = mask.gb;
-    BladeRand = hash21(vec2(bladeId, floor(root.x * 3.0) + floor(root.z * 7.0)));
+    BladeRand = rndBlade(id, uint(bladeId));
     Along = t;
     gl_Position = viewProj * vec4(world, 1.0);
 }

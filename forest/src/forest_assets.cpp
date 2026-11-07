@@ -3,6 +3,7 @@
 #include "forest_config.hpp"
 #include "forest_world.hpp"
 #include "grass.hpp"
+#include "lens_flare.hpp"
 #include "species_data.hpp"
 
 #include "componeng/renderer/asset/diffuse.hpp"
@@ -77,9 +78,7 @@ const char *propTexture(const char *name) {
   if (!std::strcmp(name, "log")) return "deadlog";
   if (!std::strcmp(name, "stump")) return "stump";
   if (!std::strcmp(name, "boulder")) return "boulder";
-  if (!std::strncmp(name, "rock", 4)) return "rockmoss";
-  if (!std::strncmp(name, "fern", 4)) return "fern";
-  return "shrub";
+  return "rockmoss";  // the rock set
 }
 
 std::unordered_set<std::string> &loadedMeshes() {
@@ -115,7 +114,7 @@ void registerWood(AssetManager &am, const std::string &name, const char *tex, fl
 
 void registerFoliage(AssetManager &am, const std::string &name, const char *tex, float windAmp,
                      Vec3 crownCenter, float crownRadius, float crownBottom, float crownTop,
-                     float crownBlend, float groundCover) {
+                     float crownBlend) {
   am.registerMaterial<renderer::DiffuseMaterial>(name.c_str(), "forest_foliage",
                                                  (std::string(tex) + "_albedo").c_str());
   auto &m = am.getMaterial(am.getMaterialID(name.c_str()));
@@ -126,7 +125,6 @@ void registerFoliage(AssetManager &am, const std::string &name, const char *tex,
   m.setUniform("crownBottom", crownBottom);
   m.setUniform("crownTop", crownTop);
   m.setUniform("crownBlend", crownBlend);
-  m.setUniform("groundCover", groundCover);
   m.setBoundsPadding(1.5f);
   setEnvironment(m);
 }
@@ -154,6 +152,9 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
   shader("foliage.vert", "foliage.frag", "forest_foliage");
   shader("grass.vert", "grass.frag", "forest_grass");
   shader("sky.vert", "sky.frag", "forest_sky");
+  // Keep this one last: the RenderSystem draws batches in shader-id order, and
+  // the flare must come after everything it is drawn over.
+  shader("flare.vert", "flare.frag", "forest_flare");
 
   // --- Textures -----------------------------------------------------------
   loadTexture(am, "ground_forest_albedo.jpg", "ground_forest_albedo", false, true, true, 16.0f);
@@ -165,7 +166,7 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
   for (const char *set : {"island_trunk", "island_branches", "small_trunk", "small_branches",
                           "fir_branches", "deadlog", "stump", "boulder", "rockmoss"})
     loadWoodSet(am, set);
-  for (const char *set : {"island_leaves", "small_leaves", "fir_twigs", "fern", "shrub"})
+  for (const char *set : {"island_leaves", "small_leaves", "fir_twigs"})
     loadFoliage(am, set);
 
   // --- Terrain ------------------------------------------------------------
@@ -192,21 +193,13 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
     }
     registerFoliage(am, std::string(s.name) + "_leaf", t.leaf, 1.0f,
                     Vec3(s.crownX, s.crownY, s.crownZ), s.crownRadius * 1.1f, s.crownBottom,
-                    s.crownTop, 0.7f, 0.0f);
+                    s.crownTop, 0.7f);
   }
 
   // --- Props ----------------------------------------------------------------
   for (const PropModel &p : kPropModels) {
-    const char *tex = propTexture(p.name);
     loadMeshes(am, p.name, "body");
-    if (p.foliage) {
-      bool fern = !std::strncmp(p.name, "fern", 4);
-      float r = 0.5f * (p.extentX > p.extentZ ? p.extentX : p.extentZ);
-      registerFoliage(am, std::string(p.name) + "_body", tex, fern ? 0.5f : 0.3f,
-                      Vec3(0.0f, p.height * 0.5f, 0.0f), r, 0.0f, p.height, fern ? 0.2f : 0.35f, 1.0f);
-    } else {
-      registerWood(am, std::string(p.name) + "_body", tex, 0.0f, 0.0f);
-    }
+    registerWood(am, std::string(p.name) + "_body", propTexture(p.name), 0.0f, 0.0f);
   }
 
   // --- Grass ----------------------------------------------------------------
@@ -245,6 +238,23 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
     m.setUniform("fadeStart", GrassField::kFadeStart);
     m.setUniform("fadeEnd", GrassField::kFadeEnd);
     setEnvironment(m);
+  }
+
+  // --- Lens flare -----------------------------------------------------------
+  // Sprites placed by the shader over the finished scene: no depth test, and
+  // added to what is there rather than replacing it.
+  am.addMesh("flare_quad", buildFlareQuad());
+  am.registerMaterial<renderer::DiffuseMaterial>("lens_flare", "forest_flare", "white");
+  {
+    auto &m = am.getMaterial(am.getMaterialID("lens_flare"));
+    renderer::api::RenderState state;
+    state.cull = renderer::api::CullMode::None;
+    state.depthTest = false;
+    state.depthWrite = false;
+    state.blend = renderer::api::BlendMode::Additive;
+    m.setRenderState(state);
+    m.setUniform("aspect", 16.0f / 9.0f);  // the engine letterboxes the view to 16:9
+    m.setUniform("sunVisible", 0.0f);
   }
 
   LOG_INFO("Forest assets loaded");
