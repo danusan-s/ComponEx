@@ -8,3 +8,4 @@ add_subdirectory(engine)
 
 add_subdirectory(aim_train)
 add_subdirectory(planetary_simulation)
+add_subdirectory(forest)

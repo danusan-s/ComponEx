@@ -1,0 +1,160 @@
+#version 330 core
+
+// One grass tuft = a small mesh of tapered blades (built in C++), drawn once per
+// instance by ONE entity (ProceduralInstancesComponent): there is no per-instance
+// data at all. Everything about a tuft is derived here from gl_InstanceID.
+//
+//  - Position: a jittered grid of kPeriod-metre squares, wrapped so the copy
+//    nearest the camera is used. Walking moves the pool with you.
+//  - Height: the terrain's height map (R32F), interpolated with the same
+//    triangle split as the terrain mesh, so tufts sit exactly on the surface.
+//  - Whether it exists: a baked mask (R = grass density, G = sun, B = sky), at
+//    0.625 m resolution, with rocks, trunks and steep ground already cut out.
+//    A tuft whose density is below its own random threshold is not drawn.
+//
+// A tuft that is not drawn has its vertices collapsed outside the clip volume.
+// The GPU still runs the vertex shader for them (nothing can compact the
+// instance list without compute/indirect draws), so the rejection tests come
+// first and are cheap.
+
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aUV; // x = blade index + 0.9 * (0..1 across the blade), y = 0 root .. 1 tip
+
+layout(std140) uniform FrameData {
+    mat4 viewProj;
+    vec3 cameraPos;      float time;
+    vec3 lightDir;       float fogDensity;
+    vec3 lightColor;     float fogStart;
+    vec3 ambientColor;   float ambientStrength;
+    vec4 fogColor;
+    float fogEnd;
+};
+
+uniform sampler2D heightMap; // R32F, (cells + 1)^2, row = z
+uniform sampler2D grassMask; // RGBA8 over the whole world
+
+uniform float worldHalf;  // metres from the origin to a world edge
+uniform float heightCells; // quads per edge of the height map
+uniform float tuftSide;   // tufts per side of the pool: side * side instances
+uniform float period;     // metres covered by the repeating pool
+uniform float fadeStart;
+uniform float fadeEnd;
+
+out vec3 FragPos;
+out vec3 BladeNormal;
+out vec3 Tint;
+out vec2 Light;
+out float BladeRand;
+out float Along; // 0 root .. 1 tip
+
+// --- integer hash: every per-tuft random comes from the instance id ---------
+uint pcg(uint v) {
+    uint state = v * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+float rnd(uint id, uint k) {
+    return float(pcg(id * 9u + k) & 0xFFFFFFu) / 16777216.0;
+}
+
+float hash21(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float terrainHeight(vec2 xz) {
+    vec2 g = (xz + worldHalf) * (heightCells / (2.0 * worldHalf));
+    g = clamp(g, vec2(0.0), vec2(heightCells - 1e-3));
+    ivec2 i = ivec2(g);
+    vec2 t = g - vec2(i);
+    float h00 = texelFetch(heightMap, i, 0).r;
+    float h10 = texelFetch(heightMap, i + ivec2(1, 0), 0).r;
+    float h01 = texelFetch(heightMap, i + ivec2(0, 1), 0).r;
+    float h11 = texelFetch(heightMap, i + ivec2(1, 1), 0).r;
+    // The terrain mesh splits each quad along the (1,0)-(0,1) diagonal.
+    if (t.x + t.y <= 1.0) return h00 + t.x * (h10 - h00) + t.y * (h01 - h00);
+    return h11 + (1.0 - t.x) * (h01 - h11) + (1.0 - t.y) * (h10 - h11);
+}
+
+void cull() {
+    FragPos = vec3(0.0);
+    BladeNormal = vec3(0.0, 1.0, 0.0);
+    Tint = vec3(1.0);
+    Light = vec2(1.0);
+    BladeRand = 0.0;
+    Along = 0.0;
+    gl_Position = vec4(0.0, 0.0, 2.0, 1.0); // outside the clip volume: dropped
+}
+
+void main()
+{
+    uint id = uint(gl_InstanceID);
+    float side = tuftSide;
+
+    // Jittered grid inside one period, then the copy nearest the camera.
+    float cellSize = period / side;
+    vec2 cell = vec2(float(id % uint(side)), float(id / uint(side)));
+    vec2 base = (cell + vec2(rnd(id, 0u), rnd(id, 1u))) * cellSize;
+    vec2 d = base - cameraPos.xz;
+    d -= period * floor(d / period + 0.5);
+    vec2 xz = cameraPos.xz + d;
+
+    // Cheapest rejections first: too far, or off the edge of the world.
+    float dist2 = dot(d, d);
+    if (dist2 > fadeEnd * fadeEnd || any(greaterThan(abs(xz), vec2(worldHalf - 6.0)))) {
+        cull();
+        return;
+    }
+
+    // Density: the mask already has rocks, trunks and steep ground removed.
+    vec3 mask = texture(grassMask, (xz + worldHalf) / (2.0 * worldHalf)).rgb;
+    if (mask.r <= rnd(id, 2u)) {
+        cull();
+        return;
+    }
+
+    float baseScale = 0.9 + 0.65 * rnd(id, 3u) * rnd(id, 4u);
+    float wind = 0.3 + 0.7 * rnd(id, 5u);
+    float v = 0.82 + 0.3 * rnd(id, 6u);
+    vec3 tint = vec3(v * (0.9 + 0.2 * rnd(id, 7u)), v, v * (0.85 + 0.2 * rnd(id, 8u)));
+
+    vec3 root = vec3(xz.x, terrainHeight(xz) - 0.03, xz.y);
+    float scale = baseScale * (0.7 + 0.3 * mask.r);
+
+    float bladeId = floor(aUV.x);
+    float t = aUV.y;
+
+    float size = scale * (1.0 - smoothstep(fadeStart, fadeEnd, sqrt(dist2)));
+
+    // Every tuft is turned randomly so the mesh's blade pattern never repeats.
+    float yaw = hash21(root.xz) * 6.2831853;
+    float cy = cos(yaw), sy = sin(yaw);
+    mat2 rot = mat2(cy, sy, -sy, cy);
+
+    vec3 local = aPos;
+    local.xz = rot * local.xz;
+    local *= size;
+
+    // Wind: a travelling gust plus faster per-blade flutter; the root stays put.
+    float ph = dot(root.xz, vec2(0.11, 0.07));
+    float gust = 0.55 * sin(time * 1.5 + ph * 4.0) + 0.35 * sin(time * 2.7 + ph * 9.0 + 2.0) +
+                 0.3 * sin(time * 0.6 + ph * 1.5);
+    float flutter = sin(time * 5.0 + bladeId * 6.7 + root.x * 1.3);
+    float bend = t * t * size;
+    local.xz += vec2(0.85, 0.52) * gust * (0.12 + 0.28 * wind) * bend;
+    local.xz += vec2(0.52, -0.85) * flutter * 0.04 * wind * bend;
+    local.y -= abs(gust) * 0.05 * bend; // a bent blade is a little shorter
+
+    vec3 world = root + local;
+    FragPos = world;
+
+    vec2 nxz = rot * aNormal.xz;
+    BladeNormal = vec3(nxz.x, aNormal.y, nxz.y);
+    Tint = tint;
+    Light = mask.gb;
+    BladeRand = hash21(vec2(bladeId, floor(root.x * 3.0) + floor(root.z * 7.0)));
+    Along = t;
+    gl_Position = viewProj * vec4(world, 1.0);
+}
