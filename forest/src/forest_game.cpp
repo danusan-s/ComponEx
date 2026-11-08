@@ -3,6 +3,7 @@
 #include "billboard.hpp"
 #include "components.hpp"
 #include "forest_assets.hpp"
+#include "forest_audio.hpp"
 #include "forest_config.hpp"
 #include "forest_world.hpp"
 #include "grass.hpp"
@@ -11,6 +12,7 @@
 #include "screenshot.hpp"
 #include "species_data.hpp"
 
+#include "componeng/audio/audio_system.hpp"
 #include "componeng/camera/camera_component.hpp"
 #include "componeng/camera/camera_system.hpp"
 #include "componeng/camera/main_camera.hpp"
@@ -264,7 +266,10 @@ void ForestGame::init(ecs::World &world) {
 
   world.setResource(std::move(fw));
 
+  setupForestAudio(world);
+
   world.registerSystem<PlayerSystem>(ecs::SystemGroup::Simulation);
+  world.registerSystem<FootstepSystem>(ecs::SystemGroup::Simulation);
   world.registerSystem<LensFlareSystem>(ecs::SystemGroup::Simulation);
   world.registerSystem<BillboardLodSystem>(ecs::SystemGroup::Presentation);
   world.registerSystem<GrassChunkSystem>(ecs::SystemGroup::Presentation);
@@ -275,6 +280,10 @@ void ForestGame::init(ecs::World &world) {
   // The camera's matrices must be built from where the player ended up this
   // frame, not last frame.
   world.addSystemDependencies<camera::CameraSystem, PlayerSystem>();
+  // The footsteps follow what the player did this frame, and the audio system
+  // applies them.
+  world.addSystemDependencies<FootstepSystem, PlayerSystem>();
+  world.addSystemDependencies<audio::AudioSystem, FootstepSystem>();
   // The flare reads where the player ended up this frame.
   world.addSystemDependencies<LensFlareSystem, PlayerSystem>();
   // Culling must see which billboards were just shown or hidden.
