@@ -2,6 +2,7 @@
 
 #include "componeng/utils/utils.hpp"
 
+#include <cstdlib>
 #include <string>
 
 namespace forest::cfg {
@@ -22,6 +23,14 @@ inline constexpr float kSunX = 0.70f, kSunY = 0.52f, kSunZ = 0.42f;
 } // namespace forest::cfg
 
 namespace forest {
+
+// Debug switch FOREST_ONLY_GRASS: a scene of terrain and grass alone, to see what
+// the grass costs. No trees or props are placed (so no collision, shadows or
+// bare patches in the grass either) or loaded.
+inline bool onlyGrass() {
+  static const bool value = std::getenv("FOREST_ONLY_GRASS") != nullptr;
+  return value;
+}
 
 // Absolute path of a file under forest/assets, through the engine's resolver
 // (main() registers this demo's root with it).

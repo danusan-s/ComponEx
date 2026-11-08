@@ -1,5 +1,7 @@
 #include "forest_assets.hpp"
 
+#include "billboard.hpp"
+#include "billboard_data.hpp"
 #include "forest_config.hpp"
 #include "forest_world.hpp"
 #include "grass.hpp"
@@ -11,6 +13,7 @@
 #include "componeng/renderer/asset_manager.hpp"
 #include "componeng/utils/logger.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <iterator>
@@ -88,8 +91,8 @@ std::unordered_set<std::string> &loadedMeshes() {
 
 // Not every part has every level of detail (branches only exist up close), so
 // load whichever files the converter wrote.
-void loadMeshes(AssetManager &am, const char *model, const char *part) {
-  for (int lod = 0; lod < 3; ++lod) {
+void loadMeshes(AssetManager &am, const char *model, const char *part, int maxLod = 2) {
+  for (int lod = 0; lod <= maxLod; ++lod) {
     std::string name = meshName(model, part, lod);
     std::string file = assetPath("models/" + name + ".obj");
     if (std::filesystem::exists(file)) {
@@ -129,7 +132,85 @@ void registerFoliage(AssetManager &am, const std::string &name, const char *tex,
   setEnvironment(m);
 }
 
+// The distant stand-in for a tree: one quad showing the atlas baked by
+// tools/bake_billboards.py. It is shaded like the tree's leaves, so it takes
+// the species' crown measurements.
+void registerBillboard(AssetManager &am, const TreeSpecies &s) {
+  const BillboardSpecies *bb = nullptr;
+  for (const BillboardSpecies &b : kBillboards)
+    if (!std::strcmp(b.name, s.name)) bb = &b;
+  if (!bb) return;
+
+  std::string name = std::string(s.name) + "_billboard";
+  // Mipmapped, but the views' own borders are transparent so they never bleed.
+  loadTexture(am, name + ".png", name + "_albedo", true, true, false, 4.0f);
+  am.addMesh(name.c_str(), buildBillboardQuad(bb->halfWidth, bb->bottom, bb->top));
+  am.registerMaterial<renderer::DiffuseMaterial>(name.c_str(), "forest_billboard",
+                                                 (name + "_albedo").c_str());
+  auto &m = am.getMaterial(am.getMaterialID(name.c_str()));
+  m.setRenderState(opaque(true));
+  m.setUniform("windAmp", 1.0f);
+  m.setUniform("views", float(kBillboardViews));
+  m.setUniform("atlasCols", float(kBillboardCols));
+  m.setUniform("atlasRows", float(kBillboardRows));
+  m.setUniform("crownCenterY", s.crownY);
+  m.setUniform("crownRadius", s.crownRadius * 1.1f);
+  m.setUniform("crownHalfH", std::max(0.5f * (s.crownTop - s.crownBottom), 0.5f));
+  m.setUniform("crownBottom", s.crownBottom);
+  m.setUniform("crownTop", s.crownTop);
+  // The quad turns in the shader, so its mesh bounds say little about where it
+  // is drawn; the widest tree scale keeps it from being culled early.
+  m.setBoundsPadding(bb->halfWidth * s.maxScale + 1.5f);
+  setEnvironment(m);
+}
+
+// Everything a grass material tells grass.vert: the ground it grows on, how it is
+// laid out (a wrapped pool of `period` metres, or, if chunkSize > 0, one fixed chunk,
+// see chunkInfo in the shader) and how it fades.
+void configureGrass(AssetManager &am, renderer::IMaterial &m, int side, float period,
+                    float chunkSize, Vec3 chunkInfo, float fadeInStart, float fadeInEnd,
+                    float fadeStart, float fadeEnd, float bladeLod, int debugIndex) {
+  m.setRenderState(opaque(true));
+  m.setTexture("heightMap", am.getTextureID("terrain_heights"));
+  m.setTexture("grassMask", am.getTextureID("grass_mask"));
+  m.setUniform("worldHalf", 0.5f * cfg::kWorldSize);
+  m.setUniform("heightCells", float(cfg::kCells));
+  m.setUniform("tuftSide", float(side));
+  m.setUniform("period", period);
+  m.setUniform("chunkSize", chunkSize);
+  m.setUniform("chunkInfo", chunkInfo);
+  m.setUniform("fadeInStart", fadeInStart);
+  m.setUniform("fadeInEnd", fadeInEnd);
+  m.setUniform("fadeStart", fadeStart);
+  m.setUniform("fadeEnd", fadeEnd);
+  m.setUniform("bladeLod", bladeLod);
+  // FOREST_GRASS_DEBUG=1 tints each pool or ring of chunks a different colour (blue,
+  // red, purple); =2 colours the grass by distance band (see grass.vert).
+  static const char *debugEnv = std::getenv("FOREST_GRASS_DEBUG");
+  const Vec3 colours[] = {Vec3(0.35f, 0.6f, 2.2f), Vec3(2.4f, 0.4f, 0.4f), Vec3(1.6f, 0.5f, 2.2f)};
+  m.setUniform("debugBands", debugEnv && debugEnv[0] == '2' ? 1.0f : 0.0f);
+  m.setUniform("debugTint", debugEnv && debugEnv[0] == '1' ? colours[debugIndex % 3] : Vec3(1.0f));
+  setEnvironment(m);
+}
+
 } // namespace
+
+void registerGrassChunkMaterial(ecs::World &world, const char *name, const GrassLevel &level,
+                                int levelIndex, float cornerX, float cornerZ, float seedOffset,
+                                float padding) {
+  auto &am = world.getResource<AssetManager>();
+  am.registerMaterial<renderer::DiffuseMaterial>(name, "forest_grass", "white");
+  auto &m = am.getMaterial(am.getMaterialID(name));
+  configureGrass(am, m, kGrassChunkSide, 0.0f, level.chunkSize, Vec3(cornerX, cornerZ, seedOffset),
+                 level.fadeInStart, level.fadeInEnd, level.fadeStart, level.fadeEnd,
+                 level.bladeLod, levelIndex);
+  m.setBoundsPadding(padding);
+}
+
+bool treeMidLods() {
+  static const bool on = std::getenv("FOREST_TREE_MID_LODS") != nullptr;
+  return on;
+}
 
 std::string meshName(const char *model, const char *part, int lod) {
   return std::string(model) + "_" + part + "_lod" + std::to_string(lod);
@@ -150,6 +231,7 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
   shader("terrain.vert", "terrain.frag", "forest_terrain");
   shader("wood.vert", "wood.frag", "forest_wood");
   shader("foliage.vert", "foliage.frag", "forest_foliage");
+  shader("billboard.vert", "billboard.frag", "forest_billboard");
   shader("grass.vert", "grass.frag", "forest_grass");
   shader("sky.vert", "sky.frag", "forest_sky");
   // Keep this one last: the RenderSystem draws batches in shader-id order, and
@@ -163,11 +245,15 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
   loadTexture(am, "ground_rock_albedo.jpg", "ground_rock_albedo", false, true, true, 16.0f);
   loadTexture(am, "ground_rock_normal.jpg", "ground_rock_normal", false, false, true, 16.0f);
 
-  for (const char *set : {"island_trunk", "island_branches", "small_trunk", "small_branches",
-                          "fir_branches", "deadlog", "stump", "boulder", "rockmoss"})
-    loadWoodSet(am, set);
-  for (const char *set : {"island_leaves", "small_leaves", "fir_twigs"})
-    loadFoliage(am, set);
+  // The trees' and props' textures, meshes and materials (all but the ground and
+  // grass) are left out of a FOREST_ONLY_GRASS scene.
+  if (!onlyGrass()) {
+    for (const char *set : {"island_trunk", "island_branches", "small_trunk", "small_branches",
+                            "fir_branches", "deadlog", "stump", "boulder", "rockmoss"})
+      loadWoodSet(am, set);
+    for (const char *set : {"island_leaves", "small_leaves", "fir_twigs"})
+      loadFoliage(am, set);
+  }
 
   // --- Terrain ------------------------------------------------------------
   // PbrMaterial binds normal/metallic/roughness/ao to texture units 1-4; the
@@ -178,14 +264,16 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
   {
     auto &m = am.getMaterial(am.getMaterialID("terrain"));
     m.setRenderState(opaque(false));
+    m.setUniform("farGrass", grassLodMode() == 3 ? 1.0f : 0.0f);
     setEnvironment(m);
   }
 
   // --- Trees ---------------------------------------------------------------
   for (const TreeSpecies &s : kTreeSpecies) {
+    if (onlyGrass()) break;
     ModelTextures t = treeTextures(s.name);
-    loadMeshes(am, s.name, "trunk");
-    loadMeshes(am, s.name, "leaf");
+    loadMeshes(am, s.name, "trunk", treeMidLods() ? 2 : 0);
+    loadMeshes(am, s.name, "leaf", treeMidLods() ? 2 : 0);
     registerWood(am, std::string(s.name) + "_trunk", t.trunk, 1.0f, 1.0f);
     if (s.hasBranches) {
       loadMeshes(am, s.name, "branch");
@@ -194,10 +282,12 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
     registerFoliage(am, std::string(s.name) + "_leaf", t.leaf, 1.0f,
                     Vec3(s.crownX, s.crownY, s.crownZ), s.crownRadius * 1.1f, s.crownBottom,
                     s.crownTop, 0.7f);
+    registerBillboard(am, s);
   }
 
   // --- Props ----------------------------------------------------------------
   for (const PropModel &p : kPropModels) {
+    if (onlyGrass()) break;
     loadMeshes(am, p.name, "body");
     registerWood(am, std::string(p.name) + "_body", propTexture(p.name), 0.0f, 0.0f);
   }
@@ -222,22 +312,17 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
                      renderer::api::TextureFormat::RGBA8, terrain.grassMask.data(), mask);
   }
 
-  am.addMesh("grass_tuft", buildGrassTuft());
-  // The grass shader has no per-instance attributes, so any material class
-  // will do; the shader reads everything it needs from the bindings below.
-  am.registerMaterial<renderer::DiffuseMaterial>("grass", "forest_grass", "white");
-  {
-    auto &m = am.getMaterial(am.getMaterialID("grass"));
-    m.setRenderState(opaque(true));
-    m.setTexture("heightMap", am.getTextureID("terrain_heights"));
-    m.setTexture("grassMask", am.getTextureID("grass_mask"));
-    m.setUniform("worldHalf", terrain.half());
-    m.setUniform("heightCells", float(cfg::kCells));
-    m.setUniform("tuftSide", float(GrassField::kTuftSide));
-    m.setUniform("period", GrassField::kPeriod);
-    m.setUniform("fadeStart", GrassField::kFadeStart);
-    m.setUniform("fadeEnd", GrassField::kFadeEnd);
-    setEnvironment(m);
+  const std::vector<GrassPool> pools = grassPools();
+  for (size_t i = 0; i < pools.size(); ++i) {
+    const GrassPool &pool = pools[i];
+    am.addMesh((std::string(pool.name) + "_tuft").c_str(),
+               buildGrassTuft(pool.blades, pool.radius, pool.widthMul));
+    // The grass shader has no per-instance attributes, so any material class
+    // will do; the shader reads everything it needs from the bindings below.
+    am.registerMaterial<renderer::DiffuseMaterial>(pool.name, "forest_grass", "white");
+    configureGrass(am, am.getMaterial(am.getMaterialID(pool.name)), pool.side, pool.period, 0.0f,
+                   Vec3(0.0f), pool.fadeInStart, pool.fadeInEnd, pool.fadeStart, pool.fadeEnd,
+                   pool.bladeLod, int(i));
   }
 
   // --- Lens flare -----------------------------------------------------------

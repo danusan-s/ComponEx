@@ -46,7 +46,7 @@ TREES = [
              dict(name="branch", mat="island_tree_02_branches", kind="wood", tex="island_branches",
                   lods=[dict(keep=0.3, grow=1.25, ratio=0.07), None, None]),
              dict(name="leaf", mat="island_tree_02_leaves", kind="foliage", tex="island_leaves",
-                  lods=[dict(keep=0.2, grow=1.8, ratio=0.28), dict(keep=0.05, grow=3.4, ratio=0.28), dict(keep=0.008, grow=8.0, ratio=0.4)]),
+                  lods=[dict(keep=0.36, grow=1.75, ratio=0.28), dict(keep=0.14, grow=2.8, ratio=0.28), dict(keep=0.03, grow=6.0, ratio=0.4)]),
          ]),
     dict(name="small", src="tree_small_02", obj=None, scale_hint=(2.2, 3.4),
          parts=[
@@ -55,7 +55,7 @@ TREES = [
              dict(name="branch", mat="tree_small_02_branches", kind="wood", tex="small_branches",
                   lods=[dict(keep=0.35, grow=1.25, ratio=0.1), None, None]),
              dict(name="leaf", mat="tree_small_02_leaves", kind="foliage", tex="small_leaves",
-                  lods=[dict(keep=0.08, grow=2.4, ratio=0.27), dict(keep=0.02, grow=4.6, ratio=0.27), dict(keep=0.004, grow=10.0, ratio=0.4)]),
+                  lods=[dict(keep=0.18, grow=2.35, ratio=0.27), dict(keep=0.06, grow=4.0, ratio=0.27), dict(keep=0.014, grow=8.5, ratio=0.4)]),
          ]),
 ]
 for variant in "abc":
@@ -66,7 +66,7 @@ for variant in "abc":
             dict(name="trunk", mat="fir_sapling_medium_branches", kind="wood", tex="fir_branches",
                  lods=[dict(ratio=0.25), dict(ratio=0.08), dict(ratio=0.03)]),
             dict(name="leaf", mat="fir_sapling_medium_twigs", kind="foliage", tex="fir_twigs",
-                 lods=[dict(keep=0.2, grow=1.9, ratio=0.5), dict(keep=0.05, grow=3.4, ratio=0.5), dict(keep=0.01, grow=7.0, ratio=0.5)]),
+                 lods=[dict(keep=0.34, grow=1.85, ratio=0.5), dict(keep=0.13, grow=3.0, ratio=0.5), dict(keep=0.03, grow=5.6, ratio=0.5)]),
         ]))
 
 PROPS = [

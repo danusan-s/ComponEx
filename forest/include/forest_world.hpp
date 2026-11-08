@@ -116,6 +116,11 @@ struct PropPlacement {
   int model;  // index into kPropModels
   componeng::core::Vec3 pos;
   float scale, yaw, tiltX, tiltZ;
+  // Full orientation (the engine's Euler angles, degrees) for props that lie along
+  // the slope, like logs; otherwise the rotation is (tiltX, yaw, tiltZ). `yaw` is
+  // still the heading, which the colliders use.
+  bool hasEuler = false;
+  componeng::core::Vec3 euler{0.0f};
   componeng::core::Vec3 tint;
   float sunVis = 1.0f;
 };

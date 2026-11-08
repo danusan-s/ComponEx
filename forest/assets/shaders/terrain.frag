@@ -27,6 +27,9 @@ layout(std140) uniform FrameData {
 
 uniform vec3 skyAmbient;
 uniform vec3 groundAmbient;
+// 1: beyond the grass the ground turns the colour of grass seen from afar, so a
+// meadow reads as one where the blades have faded out.
+uniform float farGrass;
 
 const float PI = 3.14159265;
 
@@ -117,6 +120,11 @@ void main()
         perturb(Ng, P, uz, decodeNormal(texture(aoMap, uz))) * w.z);
 
     vec3 albedo = mix(floorAlbedo, rockAlbedo, rockW) * Tint;
+    if (farGrass > 0.5) {
+        float far = smoothstep(25.0, 60.0, length(P - cameraPos));
+        vec3 grassAlbedo = vec3(0.07, 0.15, 0.025) * (0.85 + 0.3 * vnoise(P.xz * 0.04)) * Tint;
+        albedo = mix(albedo, grassAlbedo, far * (1.0 - rockW));
+    }
     vec3 N = normalize(mix(floorN, rockN, rockW));
     float rough = mix(floorArm.g, 0.8, rockW);
     float texAO = mix(floorArm.r, 1.0, rockW);

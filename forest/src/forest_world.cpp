@@ -175,6 +175,54 @@ void addPropObstacles(ForestWorld &w, const PropPlacement &p) {
   }
 }
 
+// Lays a log on the ground: along the slope under it, on the slope across it, and
+// resting on the highest ground under its length, sunk well in (see below). The
+// log's long axis is model x.
+void layLog(const Terrain &t, PropPlacement &p) {
+  const PropModel &m = kPropModels[p.model];
+  const float cy = std::cos(p.yaw * kDeg), sy = std::sin(p.yaw * kDeg);
+  const Vec3 axis(cy, 0.0f, -sy), side(sy, 0.0f, cy);
+
+  // Ground along the log: a least-squares line through five samples.
+  constexpr int kSamples = 5;
+  const float half = 0.5f * m.extentX * p.scale * 0.95f;
+  float ts[kSamples], hs[kSamples], mean = 0.0f;
+  for (int k = 0; k < kSamples; ++k) {
+    ts[k] = half * (2.0f * float(k) / float(kSamples - 1) - 1.0f);
+    hs[k] = t.heightAt(p.pos.x + axis.x * ts[k], p.pos.z + axis.z * ts[k]);
+    mean += hs[k] / float(kSamples);
+  }
+  float num = 0.0f, den = 0.0f;
+  for (int k = 0; k < kSamples; ++k) {
+    num += ts[k] * (hs[k] - mean);
+    den += ts[k] * ts[k];
+  }
+  const float alongSlope = den > 0.0f ? num / den : 0.0f;
+  float lift = 0.0f;  // how far the highest ground is above the line
+  for (int k = 0; k < kSamples; ++k) lift = std::max(lift, hs[k] - (mean + alongSlope * ts[k]));
+
+  // And across it.
+  const float w = std::max(0.5f * m.extentZ * p.scale, 0.2f);
+  const float acrossSlope = (t.heightAt(p.pos.x + side.x * w, p.pos.z + side.z * w) -
+                             t.heightAt(p.pos.x - side.x * w, p.pos.z - side.z * w)) / (2.0f * w);
+  // The model's origin is the bottom of its root flare; the trunk body's underside is
+  // about 0.55 m (times scale) higher, so sink deep enough that the body is bedded in
+  // the ground rather than hovering over it.
+  p.pos.y = mean + lift - 0.62f * p.scale;
+
+  // The frame the log sits in: x along the slope, y the ground's normal, z across.
+  const Vec3 u = componeng::core::normalize(Vec3(axis.x, alongSlope, axis.z));
+  const Vec3 q(side.x, acrossSlope, side.z);
+  const Vec3 n = componeng::core::normalize(componeng::core::cross(q, u));
+  const Vec3 c2 = componeng::core::cross(u, n);
+
+  // The engine builds R = Rx * Ry * Rz, whose columns are u, n, c2.
+  const float r01 = n.x, r02 = c2.x, r12 = c2.y, r22 = c2.z, r00 = u.x;
+  p.hasEuler = true;
+  p.euler = Vec3(std::atan2(-r12, r22) / kDeg, std::asin(std::clamp(r02, -1.0f, 1.0f)) / kDeg,
+                 std::atan2(-r01, r00) / kDeg);
+}
+
 void placeProps(ForestWorld &w, Rng &rng) {
   const Terrain &t = w.terrain;
   const float limit = t.half() - 20.0f;
@@ -235,17 +283,7 @@ void placeProps(ForestWorld &w, Rng &rng) {
     int id = place(model, x, z, s, wantLog ? 0.0f : 0.12f);
     (wantLog ? logs : stumps)++;
     PropPlacement &p = w.props[size_t(id)];
-    if (wantLog) {
-      // Rest the log on the average of the ground under its ends and middle,
-      // so it neither floats on one side nor is buried on the other.
-      float cy = std::cos(p.yaw * kDeg), sy = std::sin(p.yaw * kDeg);
-      float h = 0.0f;
-      for (float k : {-1.0f, 0.0f, 1.0f}) {
-        float dx = cy * k * 1.9f * s, dz = -sy * k * 1.9f * s;
-        h += t.heightAt(p.pos.x + dx, p.pos.z + dz);
-      }
-      p.pos.y = h / 3.0f + 0.12f * s;
-    }
+    if (wantLog) layLog(t, p);
     addPropObstacles(w, p);
   }
 }
@@ -436,8 +474,10 @@ void ForestWorld::build() {
   terrain.generate();
   obstacles.init(terrain.half());
   Rng rng(cfg::kSeed);
-  placeTrees(*this, rng);
-  placeProps(*this, rng);
+  if (!onlyGrass()) {
+    placeTrees(*this, rng);
+    placeProps(*this, rng);
+  }
   bakeLighting(*this);
   (void)kSpeciesCount;
 }

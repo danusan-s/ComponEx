@@ -1,11 +1,14 @@
 #version 330 core
 
 // One grass tuft = a small mesh of tapered blades (built in C++), drawn once per
-// instance by ONE entity (ProceduralInstancesComponent): there is no per-instance
+// instance by a ProceduralInstancesComponent entity: there is no per-instance
 // data at all. Everything about a tuft is derived here from gl_InstanceID.
 //
-//  - Position: a jittered grid of kPeriod-metre squares, wrapped so the copy
-//    nearest the camera is used. Walking moves the pool with you.
+//  - Position: either a fixed chunk of the world (chunkSize > 0: a jittered grid
+//    inside the chunk's own square; the engine culls the chunks that are out of
+//    view and GrassChunkSystem the ones out of range), or, for the original
+//    grass, a jittered grid of `period`-metre squares wrapped so the copy nearest
+//    the camera is used (walking moves the pool with you).
 //  - Height: the terrain's height map (R32F), interpolated with the same
 //    triangle split as the terrain mesh, so tufts sit exactly on the surface.
 //  - Whether it exists: a baked mask (R = grass density, G = sun, B = sky), at
@@ -40,8 +43,16 @@ uniform float worldHalf;  // metres from the origin to a world edge
 uniform float heightCells; // quads per edge of the height map
 uniform float tuftSide;   // tufts per side of the pool: side * side instances
 uniform float period;     // metres covered by the repeating pool
+uniform float chunkSize;  // 0: a wrapped pool (above). Otherwise this draw is one fixed chunk of the
+uniform vec3 chunkInfo;   // world, chunkSize metres square: xy = its corner's world xz, z = seed offset
+uniform float fadeInStart; // tufts nearer than this are not drawn by this pool, and
+uniform float fadeInEnd;   // grow from nothing to full size by this (equal: no growing)
 uniform float fadeStart;
 uniform float fadeEnd;
+uniform vec3 debugTint;   // (1, 1, 1) normally; FOREST_GRASS_DEBUG colours each pool
+uniform float debugBands; // 1: colour by distance band (FOREST_GRASS_DEBUG=2): green < 24 m,
+                          // yellow < 37, orange < 58, red < 93, purple beyond
+uniform float bladeLod;    // 1: blades drop out with distance, the rest grow to make up
 
 out vec3 FragPos;
 out vec3 BladeNormal;
@@ -110,25 +121,48 @@ void cull() {
 
 void main()
 {
-    uint id = uint(gl_InstanceID);
+    uint localId = uint(gl_InstanceID);
+    uint id = localId;  // what every random below comes from
     float side = tuftSide;
+    vec2 cell = vec2(float(localId % uint(side)), float(localId / uint(side)));
 
-    // Jittered grid inside one period, then the copy nearest the camera.
-    float cellSize = period / side;
-    vec2 cell = vec2(float(id % uint(side)), float(id / uint(side)));
-    vec2 base = (cell + vec2(rnd(id, 0u), rnd(id, 1u))) * cellSize;
-    // The copy of `base` nearest the camera, as base + a whole number of
-    // periods. Computed from `base` rather than as camera + (base - camera) so
-    // that, while the same copy stays nearest, xz is bit-identical every frame:
-    // the camera's own rounding error must not leak into the tuft's position.
-    vec2 xz = base + period * floor((cameraPos.xz - base) / period + 0.5);
+    vec2 xz;
+    if (chunkSize > 0.5) {
+        // A chunk of the world: a jittered grid inside its own square, where it
+        // always is (the engine culls whole chunks that are out of view).
+        id = localId + uint(chunkInfo.z);
+        xz = chunkInfo.xy + (cell + vec2(rnd(id, 0u), rnd(id, 1u))) * (chunkSize / side);
+    } else {
+        // Jittered grid inside one period, then the copy nearest the camera.
+        float cellSize = period / side;
+        vec2 base = (cell + vec2(rnd(id, 0u), rnd(id, 1u))) * cellSize;
+        // The copy of `base` nearest the camera, as base + a whole number of
+        // periods. Computed from `base` rather than as camera + (base - camera) so
+        // that, while the same copy stays nearest, xz is bit-identical every frame:
+        // the camera's own rounding error must not leak into the tuft's position.
+        xz = base + period * floor((cameraPos.xz - base) / period + 0.5);
+    }
     vec2 d = xz - cameraPos.xz;
 
     // Cheapest rejections first: too far, or off the edge of the world.
     float dist2 = dot(d, d);
-    if (dist2 > fadeEnd * fadeEnd || any(greaterThan(abs(xz), vec2(worldHalf - 6.0)))) {
+    if (dist2 > fadeEnd * fadeEnd || dist2 < fadeInStart * fadeInStart ||
+        any(greaterThan(abs(xz), vec2(worldHalf - 6.0)))) {
         cull();
         return;
+    }
+
+    // Geometry LOD: far tufts keep fewer of their blades. Dropping the others
+    // here, before anything else is worked out, makes their vertices nearly free
+    // (the blades are scattered through the tuft, so any prefix is a thinner tuft).
+    float bladeId = floor(aUV.x);
+    float keepBlades = 12.0;
+    if (bladeLod > 0.5) {
+        keepBlades = mix(12.0, 3.0, smoothstep(22.0, 56.0, sqrt(dist2)));
+        if (bladeId + 0.5 > keepBlades) {
+            cull();
+            return;
+        }
     }
 
     // Frustum: most of the pool is behind or beside the camera. The terrain
@@ -154,10 +188,13 @@ void main()
 
     float scale = baseScale * (0.7 + 0.3 * mask.r);
 
-    float bladeId = floor(aUV.x);
     float t = aUV.y;
 
-    float size = scale * (1.0 - smoothstep(fadeStart, fadeEnd, sqrt(dist2)));
+    float dist = sqrt(dist2);
+    float size = scale * (1.0 - smoothstep(fadeStart, fadeEnd, dist));
+    if (fadeInEnd > fadeInStart) size *= smoothstep(fadeInStart, fadeInEnd, dist);
+    // Fewer blades, a little bigger, keeps the tuft's mass.
+    size *= pow(12.0 / keepBlades, 0.3);
 
     // Every tuft is turned randomly so the mesh's blade pattern never repeats.
     float yaw = rnd(id, 9u) * 6.2831853;
@@ -183,7 +220,11 @@ void main()
 
     vec2 nxz = rot * aNormal.xz;
     BladeNormal = vec3(nxz.x, aNormal.y, nxz.y);
-    Tint = tint;
+    Tint = tint * debugTint;
+    if (debugBands > 0.5) {
+        Tint = dist < 24.0 ? vec3(0.4, 1.0, 0.4) : dist < 37.0 ? vec3(1.0, 1.0, 0.2)
+             : dist < 58.0 ? vec3(1.0, 0.5, 0.1) : dist < 93.0 ? vec3(1.0, 0.2, 0.2) : vec3(0.5, 0.2, 1.0);
+    }
     Light = mask.gb;
     BladeRand = rndBlade(id, uint(bladeId));
     Along = t;
