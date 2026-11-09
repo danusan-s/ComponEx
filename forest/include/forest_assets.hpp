@@ -22,10 +22,9 @@ void registerGrassChunkMaterial(componeng::ecs::World &world, const char *name,
                                 const GrassLevel &level, int levelIndex, float cornerX,
                                 float cornerZ, float seedOffset, float padding);
 
-// Whether trees use their decimated LOD1 and LOD2 meshes between LOD0 and the
-// billboard. Off by default: at those decimation ratios the trunks turn into dark
-// pyramids and spikes (the leaves into big flat wedges), which is worse than going
-// straight from the full mesh to the billboard. FOREST_TREE_MID_LODS turns them on.
+// Whether trees use their baked LOD1 and LOD2 meshes between LOD0 and the
+// billboard. On by default; FOREST_TREE_NO_MID_LODS goes from LOD0 straight to
+// the billboard.
 bool treeMidLods();
 
 // Name of the mesh for a model part at a level of detail, e.g. "fir_a_leaf_lod1".

@@ -101,10 +101,11 @@ std::vector<GrassLevel> grassLevels() {
   // at full size before the one inside it has thinned out, so two rings never
   // fade together and leave a sparse band between them. The ranges are what the
   // grass could afford: shortening them by 20% took a quarter off its cost.
-  // FOREST_GRASS_RANGE scales every distance, to tune that.
+  // The distances below are the original ones, scaled by 0.85 by default;
+  // FOREST_GRASS_RANGE replaces that factor (1 = the original ranges).
   static const float k = [] {
     const char *env = std::getenv("FOREST_GRASS_RANGE");
-    return env ? float(std::atof(env)) : 1.0f;
+    return env ? float(std::atof(env)) : 0.85f;
   }();
   return {{"grass_c0", 16.0f, 12, 0.22f, 1.0f, 0.0f, 0.0f, 48.0f * k, 58.0f * k, 1.0f},
           {"grass_c1", 32.0f, 8, 0.45f, 2.2f, 24.0f * k, 37.0f * k, 80.0f * k, 93.0f * k, 0.0f},
@@ -194,6 +195,7 @@ void spawnGrassChunks(componeng::ecs::World &world, const Terrain &terrain) {
         world.addComponents(
             e, core::TransformComponent{.position = core::Vec3(x0 + 0.5f * size, 0.5f * (lo + hi),
                                                                z0 + 0.5f * size)},
+           
             renderer::MeshComponent{.meshName = mesh.c_str(), .visible = false},
             renderer::MaterialComponent{.materialName = name.c_str()},
             renderer::ProceduralInstancesComponent{.count = kGrassChunkSide * kGrassChunkSide,

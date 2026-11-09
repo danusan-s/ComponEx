@@ -208,7 +208,9 @@ void registerGrassChunkMaterial(ecs::World &world, const char *name, const Grass
 }
 
 bool treeMidLods() {
-  static const bool on = std::getenv("FOREST_TREE_MID_LODS") != nullptr;
+  // Trees use their three baked 3D levels before the billboard;
+  // FOREST_TREE_NO_MID_LODS goes from LOD0 straight to the billboard.
+  static const bool on = std::getenv("FOREST_TREE_NO_MID_LODS") == nullptr;
   return on;
 }
 

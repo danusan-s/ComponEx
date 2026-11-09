@@ -35,6 +35,10 @@ M = os.path.join(WORK, "models")
 #   wood:     decimate to `ratio` of the original triangle count
 #   foliage:  keep `keep` of the leaf islands, grow each by `grow` about its
 #             centroid, then decimate by `ratio`
+#   branch (wood with `keep`): the twigs are tiny closed tubes of 30-130 faces,
+#             so keep `grow` at 1 (growing about the centroid lifts them off the
+#             branch they sit on) and `ratio` high (a harsh global decimation
+#             leaves ~5 faces per twig: flat slivers)
 # `lods` is a list of parameter dicts, index = LOD level. A part missing from
 # a LOD (None) is dropped at that level.
 # ---------------------------------------------------------------------------
@@ -42,18 +46,18 @@ TREES = [
     dict(name="island", src="island_tree_02", obj=None, scale_hint=(2.0, 3.2),
          parts=[
              dict(name="trunk", mat="island_tree_02", kind="wood", tex="island_trunk",
-                  lods=[dict(ratio=0.15), dict(ratio=0.025), dict(ratio=0.012)]),
+                  lods=[dict(ratio=0.15), dict(ratio=0.04, min_faces=16, drop=0), dict(ratio=0.02, min_faces=12, drop=80)]),
              dict(name="branch", mat="island_tree_02_branches", kind="wood", tex="island_branches",
-                  lods=[dict(keep=0.3, grow=1.25, ratio=0.07), None, None]),
+                  lods=[dict(keep=0.12, grow=1.0, ratio=0.5), None, None]),
              dict(name="leaf", mat="island_tree_02_leaves", kind="foliage", tex="island_leaves",
                   lods=[dict(keep=0.36, grow=1.75, ratio=0.28), dict(keep=0.14, grow=2.8, ratio=0.28), dict(keep=0.03, grow=6.0, ratio=0.4)]),
          ]),
     dict(name="small", src="tree_small_02", obj=None, scale_hint=(2.2, 3.4),
          parts=[
              dict(name="trunk", mat="tree_small_02_trunk", kind="wood", tex="small_trunk",
-                  lods=[dict(ratio=0.12), dict(ratio=0.025), dict(ratio=0.012)]),
+                  lods=[dict(ratio=0.12), dict(ratio=0.04, min_faces=16, drop=30), dict(ratio=0.02, min_faces=12, drop=80)]),
              dict(name="branch", mat="tree_small_02_branches", kind="wood", tex="small_branches",
-                  lods=[dict(keep=0.35, grow=1.25, ratio=0.1), None, None]),
+                  lods=[dict(keep=0.25, grow=1.0, ratio=0.5), None, None]),
              dict(name="leaf", mat="tree_small_02_leaves", kind="foliage", tex="small_leaves",
                   lods=[dict(keep=0.18, grow=2.35, ratio=0.27), dict(keep=0.06, grow=4.0, ratio=0.27), dict(keep=0.014, grow=8.5, ratio=0.4)]),
          ]),
@@ -64,7 +68,7 @@ for variant in "abc":
         scale_hint=(1.7, 2.6),
         parts=[
             dict(name="trunk", mat="fir_sapling_medium_branches", kind="wood", tex="fir_branches",
-                 lods=[dict(ratio=0.25), dict(ratio=0.08), dict(ratio=0.03)]),
+                 lods=[dict(ratio=0.25), dict(ratio=0.3, min_faces=24, drop=0, branch_keep=0.3), dict(ratio=0.3, min_faces=40, drop=300)]),
             dict(name="leaf", mat="fir_sapling_medium_twigs", kind="foliage", tex="fir_twigs",
                  lods=[dict(keep=0.34, grow=1.85, ratio=0.5), dict(keep=0.13, grow=3.0, ratio=0.5), dict(keep=0.03, grow=5.6, ratio=0.5)]),
         ]))
@@ -142,14 +146,51 @@ def islands(bm):
     return out
 
 
-def thin_islands(bm, keep, grow, rng):
+_tex_cache = {}
+
+
+def atlas(tex):
+    """RGBA pixels (bottom row first, like Blender's UVs) of a foliage atlas."""
+    if tex not in _tex_cache:
+        img = bpy.data.images.load(os.path.join(OUT_ASSETS, "textures", tex + "_albedo.png"))
+        w, h = img.size
+        _tex_cache[tex] = np.array(img.pixels[:], dtype=np.float32).reshape(h, w, 4)
+    return _tex_cache[tex]
+
+
+def is_bark_card(bm, comp, tex):
+    """True for a card that maps onto bark / a bare twig instead of leaves (the
+    fir atlas has a bark strip along one edge): it shows as a stretched light
+    brown ribbon once the cards are thinned and grown."""
+    px = atlas(tex)
+    h, w = px.shape[:2]
+    uv = bm.loops.layers.uv.active
+    cols = []
+    for f in comp:
+        u = sum(l[uv].uv[0] for l in f.loops) / len(f.loops)
+        v = sum(l[uv].uv[1] for l in f.loops) / len(f.loops)
+        cols.append(px[min(h - 1, max(0, int(v * h))), min(w - 1, max(0, int(u * w)))])
+    cols = np.array(cols)
+    opaque = cols[cols[:, 3] > 0.5]
+    if len(opaque) < 0.3 * len(cols):
+        return True  # mostly see-through
+    m = opaque[:, :3].mean(axis=0)
+    return bool(m[0] > m[1] * 1.15)  # red clearly above green: brown
+
+
+def thin_islands(bm, keep, grow, rng, tex=None):
     """Keeps a random `keep` fraction of the islands, scaled by `grow` about
-    their centroids; everything else is deleted."""
+    their centroids; everything else is deleted. With `tex`, cards that map
+    onto bark rather than leaves are always dropped (the random draw is still
+    made for them, so the other cards are chosen as before)."""
     comps = islands(bm)
     kept_faces = set()
     dead = []
     for comp in comps:
-        if rng.random() <= keep:
+        draw = rng.random() <= keep
+        if draw and tex is not None and is_bark_card(bm, comp, tex):
+            draw = False
+        if draw:
             verts = {v for f in comp for v in f.verts}
             c = sum((v.co for v in verts), type(next(iter(verts)).co)()) / len(verts)
             for v in verts:
@@ -159,6 +200,36 @@ def thin_islands(bm, keep, grow, rng):
             dead.extend(comp)
     bmesh.ops.delete(bm, geom=dead, context="FACES")
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+
+
+def decimate_by_island(bm, ratio, min_faces, drop, keep, rng):
+    """Wood LODs for skeleton-like meshes (a trunk plus many small branch
+    tubes). A single global decimation collapses each little tube to a handful
+    of faces -- spikes and slivers -- so instead every island is reduced on its
+    own, never below `min_faces`; islands smaller than `drop` faces are
+    discarded (and `keep` of the others, if given, are kept at random)."""
+    comps = islands(bm)
+    out = bmesh.new()
+    for uvl in bm.loops.layers.uv.keys():
+        out.loops.layers.uv.new(uvl)
+    for comp in comps:
+        n = len(comp)
+        if n < drop or (keep < 1.0 and n < 400 and rng.random() > keep):
+            continue
+        part = bm.copy()
+        part.faces.ensure_lookup_table()
+        mine = {f.index for f in comp}
+        bmesh.ops.delete(part, geom=[f for f in part.faces if f.index not in mine], context="FACES")
+        bmesh.ops.delete(part, geom=[v for v in part.verts if not v.link_faces], context="VERTS")
+        r = max(ratio, min_faces / float(n))
+        part = decimate(part, r, weld=True) if r < 0.999 else part
+        me = bpy.data.meshes.new("part")
+        part.to_mesh(me)
+        part.free()
+        out.from_mesh(me)
+        bpy.data.meshes.remove(me)
+    bm.free()
+    return out
 
 
 def decimate(bm, ratio, weld=False):
@@ -265,8 +336,12 @@ def convert_item(item, kind):
                 continue
             bm = raw[p["name"]].copy()
             if "keep" in params:
-                thin_islands(bm, params["keep"], params["grow"], rng)
-            bm = decimate(bm, params["ratio"], weld=p["kind"] == "wood")
+                thin_islands(bm, params["keep"], params["grow"], rng, p["tex"] if p["kind"] == "foliage" else None)
+            if "min_faces" in params:
+                bm = decimate_by_island(bm, params["ratio"], params["min_faces"], params["drop"],
+                                        params.get("branch_keep", 1.0), rng)
+            else:
+                bm = decimate(bm, params["ratio"], weld=p["kind"] == "wood")
             n = write_obj(os.path.join(OUT_ASSETS, "models", "%s_%s_lod%d.obj" % (item["name"], p["name"], lod)), bm, shift)
             total += n
             print("   ", item["name"], p["name"], "lod", lod, n)

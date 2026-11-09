@@ -15,7 +15,7 @@ using namespace componeng;
 float billboardNearDistance() {
   static const float value = [] {
     const char *env = std::getenv("FOREST_BILLBOARD_NEAR");
-    return env ? float(std::atof(env)) : 60.0f;
+    return env ? float(std::atof(env)) : 90.0f;
   }();
   return value;
 }

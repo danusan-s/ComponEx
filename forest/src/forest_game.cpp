@@ -6,6 +6,7 @@
 #include "forest_audio.hpp"
 #include "forest_config.hpp"
 #include "forest_world.hpp"
+#include "frame_limiter.hpp"
 #include "grass.hpp"
 #include "lens_flare.hpp"
 #include "player_system.hpp"
@@ -127,7 +128,7 @@ void spawnTrees(ecs::World &world, const ForestWorld &fw) {
     // LOD0 holds to base + perScale * scale metres, LOD1 to `lod1`;
     // FOREST_TREE_LOD="base,perScale,lod1" overrides them (to tune the ranges).
     static const TreeLod lod = [] {
-      TreeLod l{45.0f, 4.0f, 75.0f};
+      TreeLod l{30.0f, 3.0f, 60.0f};
       if (const char *env = std::getenv("FOREST_TREE_LOD"))
         std::sscanf(env, "%f,%f,%f", &l.base, &l.perScale, &l.lod1);
       return l;
@@ -141,8 +142,10 @@ void spawnTrees(ecs::World &world, const ForestWorld &fw) {
     std::string branch = std::string(s.name) + "_branch";
     std::string leaf = std::string(s.name) + "_leaf";
     spawnPart(world, s.name, "trunk", trunk.c_str(), tf, woodColor, ranges);
-    if (s.hasBranches)
-      spawnPart(world, s.name, "branch", branch.c_str(), tf, woodColor, ranges);
+    // Twigs dropped for now (experiment): the separate branch mesh is not spawned.
+    // if (s.hasBranches)
+    //   spawnPart(world, s.name, "branch", branch.c_str(), tf, woodColor, ranges);
+    (void)branch;
     spawnPart(world, s.name, "leaf", leaf.c_str(), tf, leafColor, ranges);
     spawnBillboard(world, s.name, tf, leafColor, far);
   }
@@ -277,6 +280,9 @@ void ForestGame::init(ecs::World &world) {
     world.registerSystem<ScreenshotSystem>(ecs::SystemGroup::Presentation);
     world.addSystemDependencies<ScreenshotSystem, renderer::RenderSystem>();
   }
+  // Last thing in the frame: waits out whatever is left of the frame budget.
+  world.registerSystem<FrameLimiterSystem>(ecs::SystemGroup::Presentation);
+  world.addSystemDependencies<FrameLimiterSystem, renderer::RenderSystem>();
   // The camera's matrices must be built from where the player ended up this
   // frame, not last frame.
   world.addSystemDependencies<camera::CameraSystem, PlayerSystem>();

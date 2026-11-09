@@ -17,9 +17,10 @@ using namespace componeng;
 
 namespace {
 
-// The recording is quiet (its loudest step peaks near -18 dB) while the ambience
-// is mastered hot, so the footsteps get a gain above 1 and the ambience sits low.
-constexpr float kAmbientVolume = 0.35f;
+// The recording is quiet (its loudest step peaks near -18 dB) while the
+// ambience is mastered hot, so the footsteps get a gain above 1 and the
+// ambience sits low.
+constexpr float kAmbientVolume = 0.25f;
 constexpr float kFootstepVolume = 2.4f;
 
 // Below this planar speed (m/s) the player counts as standing still.
@@ -37,8 +38,10 @@ void setupForestAudio(ecs::World &world) {
 
   // Minutes of stereo ambience would sit in memory as raw PCM, so it streams
   // from disk; the footsteps are short enough to decode up front.
-  audio.registerSound(assetPath("sounds/ambient_sounds.mp3").c_str(), "forest_ambient", true);
-  audio.registerSound(assetPath("sounds/dirt_footsteps.mp3").c_str(), "forest_footsteps");
+  audio.registerSound(assetPath("sounds/ambient_sounds.mp3").c_str(),
+                      "forest_ambient", true);
+  audio.registerSound(assetPath("sounds/dirt_footsteps.mp3").c_str(),
+                      "forest_footsteps");
 
   ecs::EntityID ambient = world.createEntity();
   world.addComponents(ambient, core::TransformComponent{},
@@ -67,7 +70,8 @@ void FootstepSystem::onUpdate(const ecs::SystemState &state) {
   auto &sound = world.getComponent<audio::AudioComponent>(steps);
 
   world.query<PlayerComponent>().each([&](PlayerComponent &p) {
-    float planar = std::sqrt(p.velocity.x * p.velocity.x + p.velocity.z * p.velocity.z);
+    float planar =
+        std::sqrt(p.velocity.x * p.velocity.x + p.velocity.z * p.velocity.z);
     sound.play = p.onGround && planar > kMovingSpeed;
 
     float pace = planar / kWalkSpeed;
