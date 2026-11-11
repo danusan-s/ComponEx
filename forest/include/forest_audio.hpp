@@ -14,11 +14,13 @@ namespace forest {
 void setupForestAudio(componeng::ecs::World &world);
 
 struct FootstepAudio {
-  componeng::ecs::EntityID entity = componeng::ecs::INVALID_ENTITY;
+  componeng::ecs::EntityID dirt = componeng::ecs::INVALID_ENTITY;
+  componeng::ecs::EntityID water = componeng::ecs::INVALID_ENTITY;
 };
 
 // Plays the footsteps while the player is walking on the ground, faster and
-// louder the faster they go. Runs after PlayerSystem and before AudioSystem,
+// louder the faster they go: dirt on land, splashing once the feet are below
+// the water's surface. Runs after PlayerSystem and before AudioSystem,
 // which applies what it asks for.
 class FootstepSystem : public componeng::ecs::ISystem {
 public:

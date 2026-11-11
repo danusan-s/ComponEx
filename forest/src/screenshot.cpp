@@ -31,8 +31,8 @@ void ScreenshotSystem::onUpdate(const componeng::ecs::SystemState &state) {
 
   // How many grass chunks went to the GPU this frame, of each ring (by chunk size).
   int drawn[3] = {0, 0, 0}, total = 0;
-  state.world->query<renderer::MeshComponent, GrassChunkComponent>().each(
-      [&](renderer::MeshComponent &mesh, GrassChunkComponent &chunk) {
+  state.world->query().read<renderer::MeshComponent, GrassChunkComponent>().each(
+      [&](const renderer::MeshComponent &mesh, const GrassChunkComponent &chunk) {
         ++total;
         if (!mesh.visible || mesh.culled) return;
         ++drawn[chunk.half < 12.0f ? 0 : chunk.half < 24.0f ? 1 : 2];

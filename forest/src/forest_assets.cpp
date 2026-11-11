@@ -7,6 +7,7 @@
 #include "grass.hpp"
 #include "lens_flare.hpp"
 #include "species_data.hpp"
+#include "water.hpp"
 
 #include "componeng/renderer/asset/diffuse.hpp"
 #include "componeng/renderer/asset/pbr.hpp"
@@ -230,11 +231,16 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
     am.loadShader(assetPath(std::string("shaders/") + vert).c_str(),
                   assetPath(std::string("shaders/") + frag).c_str(), nullptr, name);
   };
-  shader("terrain.vert", "terrain.frag", "forest_terrain");
+  // The RenderSystem draws opaque batches in shader-id order, so this is the draw
+  // order. The terrain goes after everything that stands on it: the trees, grass
+  // and props write depth first, and the (expensive) terrain fragments they hide
+  // are then rejected by the depth test before the shader runs.
   shader("wood.vert", "wood.frag", "forest_wood");
   shader("foliage.vert", "foliage.frag", "forest_foliage");
   shader("billboard.vert", "billboard.frag", "forest_billboard");
   shader("grass.vert", "grass.frag", "forest_grass");
+  shader("terrain.vert", "terrain.frag", "forest_terrain");
+  shader("water.vert", "water.frag", "forest_water");
   shader("sky.vert", "sky.frag", "forest_sky");
   // Keep this one last: the RenderSystem draws batches in shader-id order, and
   // the flare must come after everything it is drawn over.
@@ -325,6 +331,27 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
     configureGrass(am, am.getMaterial(am.getMaterialID(pool.name)), pool.side, pool.period, 0.0f,
                    Vec3(0.0f), pool.fadeInStart, pool.fadeInEnd, pool.fadeStart, pool.fadeEnd,
                    pool.bladeLod, int(i));
+  }
+
+  // --- Water ----------------------------------------------------------------
+  // Blended over the terrain and sky (the engine draws blended batches after
+  // both), and without writing depth. It reads the terrain's heights to know how
+  // deep the water is under each pixel: see water.frag.
+  am.addMesh("water_plane", buildWaterPlane());
+  am.registerMaterial<renderer::DiffuseMaterial>("water", "forest_water", "white");
+  {
+    auto &m = am.getMaterial(am.getMaterialID("water"));
+    renderer::api::RenderState state;
+    state.blend = renderer::api::BlendMode::Alpha;
+    state.depthWrite = false;
+    m.setRenderState(state);
+    m.setTexture("heightMap", am.getTextureID("terrain_heights"));
+    m.setUniform("worldHalf", 0.5f * cfg::kWorldSize);
+    m.setUniform("heightCells", float(cfg::kCells));
+    m.setUniform("skyColor", Vec3(0.20f, 0.42f, 0.88f));  // as the SkyboxComponent's
+    m.setUniform("shallowColor", Vec3(0.05f, 0.34f, 0.36f));
+    m.setUniform("deepColor", Vec3(0.004f, 0.045f, 0.15f));
+    m.setUniform("skyAmbient", kSkyAmbient);
   }
 
   // --- Lens flare -----------------------------------------------------------

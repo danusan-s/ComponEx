@@ -1,6 +1,7 @@
 #include "lens_flare.hpp"
 
 #include "forest_world.hpp"
+#include "water.hpp"
 
 #include "componeng/camera/main_camera.hpp"
 #include "componeng/core/transform_component.hpp"
@@ -36,7 +37,10 @@ void LensFlareSystem::onUpdate(const componeng::ecs::SystemState &state) {
                              .getComponent<core::TransformComponent>(
                                  world.getResource<camera::MainCamera>().entity)
                              .position;
-  const float target = world.getResource<ForestWorld>().sunVisibility(eye);
+  // Underwater there is no sun to see.
+  const float target = depthBelowSurface(eye, float(world.time)) > 0.0f
+                           ? 0.0f
+                           : world.getResource<ForestWorld>().sunVisibility(eye);
 
   if (m_first) {
     m_visibility = target;

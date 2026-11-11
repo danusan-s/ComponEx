@@ -13,6 +13,21 @@ inline constexpr int kCells = 512;     // quads per edge (1.25 m)
 inline constexpr int kChunkCells = 64; // quads per terrain mesh, for culling
 inline constexpr unsigned kSeed = 11;
 
+// The sea. The terrain falls away to it at the world's edge (an island), and
+// one flat plane, much larger than the world so it reaches the fogged horizon,
+// sits at kWaterLevel. Nothing is planted, and no grass grows, near the
+// waterline.
+inline constexpr float kWaterLevel = -4.0f;
+inline constexpr float kWaterSize = 1800.0f; // edge length of the plane
+inline constexpr int kWaterCells =
+    180; // quads per edge (10 m), for vertex waves later
+inline constexpr float kWadeDepth =
+    3.0f; // the player can walk this far below the surface
+
+// The camera's vertical field of view in degrees. The screen-height LODs are
+// derived from it, so it lives here.
+inline constexpr float kFov = 70.0f;
+
 // Frame rate cap (see FrameLimiterSystem). 0 = uncapped.
 inline constexpr float kTargetFps = 0.0f;
 

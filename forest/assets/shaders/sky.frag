@@ -70,5 +70,9 @@ void main()
     // Sun disc.
     col += lightColor * smoothstep(0.99935, 0.99975, s) * 3.0;
 
+    // Underwater (the game turns the fog up to ~0.18, against 0.007 above) there
+    // is no sky to see, only the murk: show the fog colour.
+    col = mix(col, horizonColor, smoothstep(0.01, 0.12, fogDensity));
+
     FragColor = vec4(pow(aces(col), vec3(1.0 / 2.2)), 1.0);
 }

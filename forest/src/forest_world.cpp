@@ -89,6 +89,11 @@ float lowestGround(const Terrain &t, float x, float z, float radius) {
   return low;
 }
 
+// Ground too close to the waterline (or under it) to plant on.
+bool wet(const Terrain &t, float x, float z, float margin) {
+  return t.heightAt(x, z) < cfg::kWaterLevel + margin;
+}
+
 struct Rng {
   std::mt19937 gen;
   explicit Rng(unsigned seed) : gen(seed) {}
@@ -110,6 +115,7 @@ void placeTrees(ForestWorld &w, Rng &rng) {
   for (int attempt = 0; attempt < 220000; ++attempt) {
     float x = rng.range(-limit, limit), z = rng.range(-limit, limit);
     if (rng.uni() > forestDensity(x, z)) continue;
+    if (wet(t, x, z, 2.0f)) continue;
     Vec3 n = t.normalAt(x, z);
     if (n.y < 0.80f) continue;
 
@@ -259,7 +265,7 @@ void placeProps(ForestWorld &w, Rng &rng) {
   for (int c = 0; c < 2600; ++c) {
     float x = rng.range(-limit, limit), z = rng.range(-limit, limit);
     float ny = t.normalAt(x, z).y;
-    if (ny < 0.5f) continue;
+    if (ny < 0.5f || wet(t, x, z, 1.0f)) continue;
     if (rng.uni() > 0.035f + 1.6f * (1.0f - ny)) continue;
     if (blockedAt(x, z, 1.0f)) continue;
     bool big = rng.uni() < 0.3f;
@@ -274,7 +280,7 @@ void placeProps(ForestWorld &w, Rng &rng) {
   for (int c = 0; c < 4000 && (logs < 55 || stumps < 90); ++c) {
     float x = rng.range(-limit, limit), z = rng.range(-limit, limit);
     float d = forestDensity(x, z);
-    if (d < 0.3f || t.normalAt(x, z).y < 0.9f) continue;
+    if (d < 0.3f || t.normalAt(x, z).y < 0.9f || wet(t, x, z, 1.5f)) continue;
     bool wantLog = rng.uni() < 0.4f;
     int model = wantLog ? log : stump;
     if (wantLog ? logs >= 55 : stumps >= 90) continue;
@@ -339,6 +345,8 @@ void bakeGrassMask(ForestWorld &w) {
       float ny = t.normalAt(x, z).y;
       float d = noise::smoothstep(0.62f, 0.80f, ny);
       d *= 0.88f + 0.12f * noise::fbm(x * 0.06f + 3.0f, z * 0.06f, 3, 9);
+      // No grass on the sea floor or the wet fringe of the shore.
+      d *= noise::smoothstep(cfg::kWaterLevel + 0.15f, cfg::kWaterLevel + 0.9f, t.heightAt(x, z));
       w.obstacles.query(x, z, 3.0f, [&](const Obstacle &o) {
         float dx = o.x - x, dz = o.z - z;
         float dist = std::sqrt(dx * dx + dz * dz) - o.r;

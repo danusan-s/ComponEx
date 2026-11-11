@@ -12,6 +12,7 @@
 #include "player_system.hpp"
 #include "screenshot.hpp"
 #include "species_data.hpp"
+#include "water.hpp"
 
 #include "componeng/audio/audio_system.hpp"
 #include "componeng/camera/camera_component.hpp"
@@ -52,17 +53,33 @@ struct TreeLod {
   float base, perScale, lod1;
 };
 
+// The LODs are chosen by how much of the screen's height an entity covers (see
+// renderer::LodComponent). The thresholds below were set from the distances the
+// levels used to switch at, for a tree or prop of `refScale` times its model
+// size: those are the switch distances at that scale, and an entity bigger than
+// that keeps each level further out, a smaller one gives it up sooner.
+struct LodSizing {
+  float size;      // the model's extent (its height, for a tree)
+  float refScale;  // the scale the distance ranges are for
+};
+
+float screenHeightAt(const LodSizing &sizing, float distance) {
+  return renderer::lodScreenHeight(sizing.size * sizing.refScale, distance, cfg::kFov);
+}
+
 // Spawns one mesh part of a model, with whichever LODs were baked.
 void spawnPart(ecs::World &world, const char *model, const char *part,
                const char *material, const core::TransformComponent &tf,
-               Vec4 color, LodRanges ranges) {
+               Vec4 color, LodRanges ranges, LodSizing sizing) {
   auto &am = world.getResource<renderer::AssetManager>();
   renderer::LodComponent lod;
+  lod.size = sizing.size;
   for (int k = 0; k < 3; ++k) {
     std::string name = meshName(model, part, k);
     if (meshLoaded(name)) {
       lod.mesh[k] = am.getMeshID(name.c_str());
       lod.distance[k] = ranges.d[k];
+      lod.screenHeight[k] = screenHeightAt(sizing, ranges.d[k]);
     }
   }
   if (lod.mesh[0] == 0)
@@ -78,10 +95,11 @@ void spawnPart(ecs::World &world, const char *model, const char *part,
       renderer::ColorComponent{.color = color}, renderer::LodComponent(lod));
 }
 
-// The tree seen from far away: one quad, shown beyond `nearDistance`.
+// The tree seen from far away: one quad, shown from `nearDistance` metres at
+// the tree's reference scale (as a screen-height threshold; see BillboardLodComponent).
 void spawnBillboard(ecs::World &world, const char *species,
                     const core::TransformComponent &tf, Vec4 color,
-                    float nearDistance) {
+                    float nearDistance, LodSizing sizing) {
   auto &am = world.getResource<renderer::AssetManager>();
   std::string name = std::string(species) + "_billboard";
   ecs::EntityID e = world.createEntity();
@@ -92,7 +110,9 @@ void spawnBillboard(ecs::World &world, const char *species,
                               .visible = false},
       renderer::MaterialComponent{.materialName = name.c_str()},
       renderer::ColorComponent{.color = color},
-      BillboardLodComponent{.nearDistance = nearDistance});
+      BillboardLodComponent{.nearDistance = nearDistance,
+                            .size = sizing.size,
+                            .screenHeight = screenHeightAt(sizing, nearDistance)});
 }
 
 void spawnTerrain(ecs::World &world, const Terrain &terrain) {
@@ -112,6 +132,18 @@ void spawnTerrain(ecs::World &world, const Terrain &terrain) {
           renderer::MaterialComponent{.materialName = "terrain"});
     }
   }
+}
+
+// One plane at sea level, out past the edge of the world.
+void spawnWater(ecs::World &world) {
+  auto &am = world.getResource<renderer::AssetManager>();
+  ecs::EntityID e = world.createEntity();
+  world.addComponents(
+      e, core::TransformComponent{.position = Vec3(0.0f, cfg::kWaterLevel, 0.0f)},
+      renderer::MeshComponent{.meshName = "water_plane",
+                              .meshID = am.getMeshID("water_plane"),
+                              .visible = true},
+      renderer::MaterialComponent{.materialName = "water"});
 }
 
 void spawnTrees(ecs::World &world, const ForestWorld &fw) {
@@ -141,13 +173,15 @@ void spawnTrees(ecs::World &world, const ForestWorld &fw) {
     std::string trunk = std::string(s.name) + "_trunk";
     std::string branch = std::string(s.name) + "_branch";
     std::string leaf = std::string(s.name) + "_leaf";
-    spawnPart(world, s.name, "trunk", trunk.c_str(), tf, woodColor, ranges);
+    // The distance ranges are for a tree of its species' mean scale.
+    const LodSizing sizing{s.height, 0.5f * (s.minScale + s.maxScale)};
+    spawnPart(world, s.name, "trunk", trunk.c_str(), tf, woodColor, ranges, sizing);
     // Twigs dropped for now (experiment): the separate branch mesh is not spawned.
     // if (s.hasBranches)
-    //   spawnPart(world, s.name, "branch", branch.c_str(), tf, woodColor, ranges);
+    //   spawnPart(world, s.name, "branch", branch.c_str(), tf, woodColor, ranges, sizing);
     (void)branch;
-    spawnPart(world, s.name, "leaf", leaf.c_str(), tf, leafColor, ranges);
-    spawnBillboard(world, s.name, tf, leafColor, far);
+    spawnPart(world, s.name, "leaf", leaf.c_str(), tf, leafColor, ranges, sizing);
+    spawnBillboard(world, s.name, tf, leafColor, far, sizing);
   }
 }
 
@@ -158,12 +192,18 @@ void spawnProps(ecs::World &world, const ForestWorld &fw) {
                                 .rotation = p.hasEuler ? p.euler : Vec3(p.tiltX, p.yaw, p.tiltZ),
                                 .scale = Vec3(p.scale)};
     LodRanges ranges{{60.0f, 170.0f, 0.0f}};
+    // Logs and stumps are placed at about 0.8-1.5x, rocks at 0.3-2.2x: the
+    // distance ranges are for a typical one.
+    float refScale = 1.15f;
     std::string name = m.name;
-    if (name == "boulder" || name.rfind("rock", 0) == 0)
+    if (name == "boulder" || name.rfind("rock", 0) == 0) {
       ranges = {{80.0f, 260.0f, 0.0f}};
+      refScale = 0.9f;
+    }
     std::string material = name + "_body";
+    const LodSizing sizing{std::max({m.height, m.extentX, m.extentZ}), refScale};
     spawnPart(world, m.name, "body", material.c_str(), tf,
-              Vec4(p.tint, p.sunVis), ranges);
+              Vec4(p.tint, p.sunVis), ranges, sizing);
   }
 }
 
@@ -223,6 +263,7 @@ void ForestGame::init(ecs::World &world) {
   // Debug switches, to see what the grass costs: FOREST_NO_GRASS leaves it out,
   // FOREST_ONLY_GRASS leaves out the trees and props (see onlyGrass()).
   spawnTerrain(world, fw.terrain);
+  spawnWater(world);
   if (!onlyGrass()) {
     spawnTrees(world, fw);
     spawnProps(world, fw);
@@ -245,7 +286,7 @@ void ForestGame::init(ecs::World &world) {
   // --- Player and camera -----------------------------------------------------
   ecs::EntityID cam = world.createEntity();
   world.addComponents(cam, core::TransformComponent{},
-                      camera::CameraComponent{.fov = 70.0f,
+                      camera::CameraComponent{.fov = cfg::kFov,
                                               .aspectRatio = 16.0f / 9.0f,
                                               .nearPlane = 0.02f,
                                               .farPlane = 750.0f});
@@ -275,6 +316,7 @@ void ForestGame::init(ecs::World &world) {
   world.registerSystem<FootstepSystem>(ecs::SystemGroup::Simulation);
   world.registerSystem<LensFlareSystem>(ecs::SystemGroup::Simulation);
   world.registerSystem<BillboardLodSystem>(ecs::SystemGroup::Presentation);
+  world.registerSystem<UnderwaterSystem>(ecs::SystemGroup::Presentation);
   world.registerSystem<GrassChunkSystem>(ecs::SystemGroup::Presentation);
   if (std::getenv("FOREST_SHOT")) {
     world.registerSystem<ScreenshotSystem>(ecs::SystemGroup::Presentation);
@@ -294,6 +336,8 @@ void ForestGame::init(ecs::World &world) {
   world.addSystemDependencies<LensFlareSystem, PlayerSystem>();
   // Culling must see which billboards were just shown or hidden.
   world.addSystemDependencies<renderer::CullingSystem, BillboardLodSystem>();
+  // The fog, sky and sun must be set for this frame's camera before they are drawn.
+  world.addSystemDependencies<renderer::RenderSystem, UnderwaterSystem>();
   world.addSystemDependencies<renderer::CullingSystem, GrassChunkSystem>();
 }
 

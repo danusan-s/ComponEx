@@ -10,13 +10,21 @@ class Mesh;
 
 namespace forest {
 
-// Marks a tree's billboard: shown only beyond `nearDistance` metres from the
-// camera, where the 3D tree has been replaced by it. (The engine's LodComponent
-// has three levels, each with its own mesh but one material; a billboard needs
-// its own material and a minimum distance, so it is switched here instead.)
+// Marks a tree's billboard: shown once the 3D tree has been replaced by it.
+// (The engine's LodComponent has three levels, each with its own mesh but one
+// material; a billboard needs its own material and a minimum distance, so it is
+// switched here instead.)
+//
+// Like the engine's LodComponent it works in one of two modes. With `size` > 0
+// the billboard shows when the tree covers less of the screen's height than
+// `screenHeight` (size * scale / (2 * distance * tan(fov / 2)), the same measure
+// as LodComponent's screen-height mode), so it matches the last 3D level's
+// threshold. Otherwise it shows beyond `nearDistance` metres.
 struct BillboardLodComponent {
   static constexpr const char *component_name = "BillboardLodComponent";
   float nearDistance = 0.0f;
+  float size = 0.0f;
+  float screenHeight = 0.0f;
 };
 
 // Distance beyond which trees are billboards. FOREST_BILLBOARD_NEAR overrides

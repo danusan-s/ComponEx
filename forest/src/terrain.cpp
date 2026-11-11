@@ -31,10 +31,14 @@ float finalHeight(float x, float z, float spawnHeight) {
   // A gentle meadow around the spawn point.
   float r = std::sqrt(x * x + z * z);
   h = spawnHeight + (h - spawnHeight) * noise::smoothstep(10.0f, 55.0f, r);
-  // The world edge rises into ridges so the boundary reads as terrain.
-  float e = noise::smoothstep(0.30f * cfg::kWorldSize, 0.5f * cfg::kWorldSize,
-                              std::max(std::fabs(x), std::fabs(z)));
-  return h + e * e * 70.0f;
+  // The land is an island: it falls away into the sea towards the edge. The
+  // distance is wobbled by low-frequency noise so the coast is irregular rather
+  // than a circle, and the fall is complete (e = 1) before the world's border
+  // (320 m on the axes, at worst about 285 m after the wobble), so the mesh
+  // ends deep under the water.
+  float coast = r + (noise::fbm(x * 0.012f - 31.0f, z * 0.012f + 8.0f, 3, 7) - 0.5f) * 70.0f;
+  float e = noise::smoothstep(0.27f * cfg::kWorldSize, 0.44f * cfg::kWorldSize, coast);
+  return h + (cfg::kWaterLevel - 10.0f - h) * e;
 }
 
 } // namespace

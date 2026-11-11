@@ -22,6 +22,8 @@ namespace {
 // ambience sits low.
 constexpr float kAmbientVolume = 0.25f;
 constexpr float kFootstepVolume = 2.4f;
+// The wading recording is much hotter: its steps peak around -2 dB.
+constexpr float kWaterStepVolume = 0.6f;
 
 // Below this planar speed (m/s) the player counts as standing still.
 constexpr float kMovingSpeed = 0.8f;
@@ -42,6 +44,9 @@ void setupForestAudio(ecs::World &world) {
                       "forest_ambient", true);
   audio.registerSound(assetPath("sounds/dirt_footsteps.mp3").c_str(),
                       "forest_footsteps");
+  // Four minutes: decoded it would be tens of MB of PCM, so it streams.
+  audio.registerSound(assetPath("sounds/water_footsteps.mp3").c_str(),
+                      "forest_water_footsteps", true);
 
   ecs::EntityID ambient = world.createEntity();
   world.addComponents(ambient, core::TransformComponent{},
@@ -59,25 +64,43 @@ void setupForestAudio(ecs::World &world) {
                                             .loop = true,
                                             .volume = kFootstepVolume,
                                             .is3D = false});
-  world.setResource(FootstepAudio{steps});
+
+  ecs::EntityID splashes = world.createEntity();
+  world.addComponents(splashes, core::TransformComponent{},
+                      audio::AudioComponent{.audioName = "forest_water_footsteps",
+                                            .playOnAwake = false,
+                                            .loop = true,
+                                            .volume = kWaterStepVolume,
+                                            .is3D = false});
+  world.setResource(FootstepAudio{steps, splashes});
 }
 
 void FootstepSystem::onUpdate(const ecs::SystemState &state) {
   ecs::World &world = *state.world;
-  ecs::EntityID steps = world.getResource<FootstepAudio>().entity;
-  if (!world.hasComponent<audio::AudioComponent>(steps))
+  const FootstepAudio &ids = world.getResource<FootstepAudio>();
+  if (!world.hasComponent<audio::AudioComponent>(ids.dirt) ||
+      !world.hasComponent<audio::AudioComponent>(ids.water))
     return;
-  auto &sound = world.getComponent<audio::AudioComponent>(steps);
+  auto &dirt = world.getComponent<audio::AudioComponent>(ids.dirt);
+  auto &water = world.getComponent<audio::AudioComponent>(ids.water);
 
-  world.query<PlayerComponent>().each([&](PlayerComponent &p) {
-    float planar =
-        std::sqrt(p.velocity.x * p.velocity.x + p.velocity.z * p.velocity.z);
-    sound.play = p.onGround && planar > kMovingSpeed;
+  world.query()
+      .read<PlayerComponent, core::TransformComponent>()
+      .each([&](const PlayerComponent &p, const core::TransformComponent &tf) {
+        float planar =
+            std::sqrt(p.velocity.x * p.velocity.x + p.velocity.z * p.velocity.z);
+        bool walking = p.onGround && planar > kMovingSpeed;
+        // Feet below the surface: wading, so splashes instead of dirt.
+        bool wading = tf.position.y < cfg::kWaterLevel;
+        dirt.play = walking && !wading;
+        water.play = walking && wading;
 
-    float pace = planar / kWalkSpeed;
-    sound.pitch = std::clamp(pace, 0.7f, 1.45f);
-    sound.volume = kFootstepVolume * std::clamp(pace, 0.4f, 1.0f);
-  });
+        float pace = planar / kWalkSpeed;
+        dirt.pitch = water.pitch = std::clamp(pace, 0.7f, 1.45f);
+        float level = std::clamp(pace, 0.4f, 1.0f);
+        dirt.volume = kFootstepVolume * level;
+        water.volume = kWaterStepVolume * level;
+      });
 }
 
 } // namespace forest

@@ -120,10 +120,13 @@ void GrassChunkSystem::onUpdate(const componeng::ecs::SystemState &state) {
                                  world.getResource<camera::MainCamera>().entity)
                              .position;
 
-  world.query<core::TransformComponent, renderer::MeshComponent, GrassChunkComponent>()
+  world.query()
+      .read<core::TransformComponent>()
+      .write<renderer::MeshComponent>()
+      .read<GrassChunkComponent>()
       .eachParallel(world.threadPool(),
-                    [cam](core::TransformComponent &t, renderer::MeshComponent &mesh,
-                          GrassChunkComponent &chunk) {
+                    [cam](const core::TransformComponent &t, renderer::MeshComponent &mesh,
+                          const GrassChunkComponent &chunk) {
                       const float ax = std::fabs(cam.x - t.position.x);
                       const float az = std::fabs(cam.z - t.position.z);
                       // Distance to the nearest and the farthest point of the square.

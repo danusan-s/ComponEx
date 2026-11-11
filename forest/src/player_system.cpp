@@ -1,6 +1,7 @@
 #include "player_system.hpp"
 
 #include "components.hpp"
+#include "forest_config.hpp"
 #include "forest_world.hpp"
 
 #include "componeng/camera/main_camera.hpp"
@@ -79,7 +80,7 @@ void PlayerSystem::onUpdate(const componeng::ecs::SystemState &state) {
   ecs::EntityID camEntity = world.getResource<camera::MainCamera>().entity;
   core::TransformComponent &camTf = world.getComponent<core::TransformComponent>(camEntity);
 
-  world.query<core::TransformComponent, PlayerComponent>().each(
+  world.query().write<core::TransformComponent, PlayerComponent>().each(
       [&](core::TransformComponent &tf, PlayerComponent &p) {
         // --- Look --------------------------------------------------------
         p.yaw += input.getMouseDeltaX() * kMouseSensitivity;
@@ -122,6 +123,8 @@ void PlayerSystem::onUpdate(const componeng::ecs::SystemState &state) {
           auto climbable = [&](float tx, float tz) {
             float d = std::sqrt((tx - x) * (tx - x) + (tz - z) * (tz - z));
             if (d < 1e-5f) return true;
+            // The sea is not walkable past wading depth: slide along the shore.
+            if (fw.terrain.heightAt(tx, tz) < cfg::kWaterLevel - cfg::kWadeDepth) return false;
             Vec3 n = fw.terrain.normalAt(tx, tz);
             float rise = fw.terrain.heightAt(tx, tz) - tf.position.y;
             return n.y >= kMinSlopeNormalY || rise <= 0.0f;
