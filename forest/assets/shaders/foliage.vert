@@ -48,6 +48,10 @@ vec3 sway(vec3 base, float h) {
     return vec3(0.85, 0.0, 0.52) * gust * 0.32 * k * windAmp;
 }
 
+// The engine's depth pre-pass reruns this stage; invariance keeps its depth bit-identical
+// to the colour pass, which tests for "equal".
+invariant gl_Position;
+
 void main()
 {
     float s = length(instanceModel[1].xyz);

@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace forest {
 
@@ -94,16 +95,28 @@ void UnderwaterSystem::onUpdate(const ecs::SystemState &state) {
 }
 
 std::unique_ptr<componeng::renderer::Mesh> buildWaterPlane() {
-  const int n = cfg::kWaterCells;
+  // Grid lines, the same along x and z: coarse, then fine across the island,
+  // then coarse again. (Lines run the whole way across, so the change of cell
+  // size makes no cracks.)
   const float half = 0.5f * cfg::kWaterSize;
-  const float cell = cfg::kWaterSize / float(n);
+  const float fine = cfg::kWaterFineHalf;
+  std::vector<float> axis;
+  const int coarseN = std::max(1, int(std::round((half - fine) / cfg::kWaterCoarseCell)));
+  const int fineN = std::max(1, int(std::round(2.0f * fine / cfg::kWaterFineCell)));
+  for (int i = 0; i < coarseN; ++i)
+    axis.push_back(-half + (half - fine) * float(i) / float(coarseN));
+  for (int i = 0; i < fineN; ++i)
+    axis.push_back(-fine + 2.0f * fine * float(i) / float(fineN));
+  for (int i = 0; i <= coarseN; ++i)
+    axis.push_back(fine + (half - fine) * float(i) / float(coarseN));
+  const int n = int(axis.size()) - 1; // cells per edge
 
   auto mesh = std::make_unique<componeng::renderer::Mesh>();
   mesh->m_vertices.reserve(size_t(n + 1) * (n + 1) * 8);
   mesh->m_indices.reserve(size_t(n) * n * 6);
   for (int j = 0; j <= n; ++j) {
     for (int i = 0; i <= n; ++i) {
-      float x = -half + float(i) * cell, z = -half + float(j) * cell;
+      float x = axis[size_t(i)], z = axis[size_t(j)];
       float v[8] = {x, 0.0f, z, 0.0f, 1.0f, 0.0f, x, z};
       mesh->m_vertices.insert(mesh->m_vertices.end(), v, v + 8);
     }

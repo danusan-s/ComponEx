@@ -109,6 +109,10 @@ bool inView(vec3 center, float radius) {
            dot(near, p) >= -radius * length(near.xyz);
 }
 
+// The engine's depth pre-pass reruns this stage; invariance keeps its depth bit-identical
+// to the colour pass, which tests for "equal".
+invariant gl_Position; // must precede every use, cull() included
+
 void cull() {
     FragPos = vec3(0.0);
     BladeNormal = vec3(0.0, 1.0, 0.0);

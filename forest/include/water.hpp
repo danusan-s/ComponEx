@@ -13,9 +13,9 @@ namespace forest {
 
 // The sea: a flat grid in the xz plane, centred on the origin at y = 0 (the
 // entity's transform lifts it to cfg::kWaterLevel). It is much larger than the
-// world, so it runs out to the fogged horizon, and finely enough divided
-// (cfg::kWaterCells) for a vertex shader to ripple it later. UV carries the
-// position in metres.
+// world, so it runs out to the fogged horizon. The grid is fine over the island
+// (cfg::kWaterFineCell) and coarse beyond it (cfg::kWaterCoarseCell), for the
+// vertex shader's swells. UV carries the position in metres.
 std::unique_ptr<componeng::renderer::Mesh> buildWaterPlane();
 
 // Height of the water's surface at (x, z) and time t (seconds): the still level

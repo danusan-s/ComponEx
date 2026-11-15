@@ -19,8 +19,12 @@ inline constexpr unsigned kSeed = 11;
 // waterline.
 inline constexpr float kWaterLevel = -4.0f;
 inline constexpr float kWaterSize = 1800.0f; // edge length of the plane
-inline constexpr int kWaterCells =
-    180; // quads per edge (10 m), for vertex waves later
+// The plane's grid is fine over the island and its coast (the waterline is
+// where the wave heights, linearly interpolated between vertices, meet the
+// ground, so coarse cells show as kinks in it) and coarse out to the horizon.
+inline constexpr float kWaterFineHalf = 340.0f; // fine out to here from the centre
+inline constexpr float kWaterFineCell = 2.5f;   // metres
+inline constexpr float kWaterCoarseCell = 10.0f;
 inline constexpr float kWadeDepth =
     3.0f; // the player can walk this far below the surface
 

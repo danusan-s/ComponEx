@@ -29,6 +29,10 @@ out vec3 Normal;
 out vec2 Bake;
 out vec3 Tint;
 
+// The engine's depth pre-pass reruns this stage; invariance keeps its depth bit-identical
+// to the colour pass, which tests for "equal".
+invariant gl_Position;
+
 void main()
 {
     vec4 world = instanceModel * vec4(aPos, 1.0);

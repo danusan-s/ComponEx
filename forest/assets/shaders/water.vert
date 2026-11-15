@@ -1,7 +1,7 @@
 #version 330 core
 
-// The sea. Only the long swells move the geometry: the grid is 10 m, so
-// anything much shorter than ~40 m would alias. The shorter ripples live in the
+// The sea. Only the long swells move the geometry: the grid is 2.5 m over the
+// island and 10 m beyond, so anything much shorter than ~40 m would alias. The shorter ripples live in the
 // fragment shader as normals only (see water.frag). The first three waves here
 // must match the first three there.
 

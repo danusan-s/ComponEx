@@ -30,6 +30,26 @@ uniform vec3 groundAmbient;
 // 1: beyond the grass the ground turns the colour of grass seen from afar, so a
 // meadow reads as one where the blades have faded out.
 uniform float farGrass;
+// The sea's mean surface (metres). Ground under it is seen through the water:
+// darker and bluer with depth, with the sun's light bunched into caustics.
+uniform float waterLevel;
+
+// The sea's three long swells, as in water.vert (keep the two equal): where the
+// surface really is, so ground the water has drawn back from is dry.
+const vec4 SWELL[3] = vec4[3](
+    vec4(20.0, 90.0, 0.45, 0.0),
+    vec4(75.0, 58.0, 0.25, 1.7),
+    vec4(-35.0, 44.0, 0.14, 3.1));
+
+float seaHeight(vec2 p) {
+    float h = waterLevel;
+    for (int i = 0; i < 3; ++i) {
+        float a = radians(SWELL[i].x);
+        float k = 6.2831853 / SWELL[i].y;
+        h += SWELL[i].z * sin(k * dot(vec2(cos(a), sin(a)), p) - sqrt(9.81 * k) * time + SWELL[i].w);
+    }
+    return h;
+}
 
 const float PI = 3.14159265;
 
@@ -72,6 +92,40 @@ float distributionGGX(float NdotH, float rough) {
 vec3 aces(vec3 x) {
     x *= 0.8;
     return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+
+// Caustics: the bright net the sun draws on the seabed after the ripples have
+// bent it. Light gathers along the edges between the cells of a drifting Voronoi
+// pattern (the distance to the second nearest point minus the nearest is ~0
+// there), so the net is made of thin bright filaments around dark cells.
+vec2 hash22(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+float causticLayer(vec2 p, float t) {
+    vec2 i = floor(p), f = fract(p);
+    float d1 = 8.0, d2 = 8.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            vec2 g = vec2(float(x), float(y));
+            vec2 o = 0.5 + 0.5 * sin(t + 6.2831853 * hash22(i + g));
+            vec2 r = g + o - f;
+            float d = dot(r, r);
+            if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }
+        }
+    }
+    float edge = sqrt(d2) - sqrt(d1);
+    float line = 1.0 - smoothstep(0.0, 0.30, edge);
+    return line * line;
+}
+
+float caustics(vec2 xz) {
+    // Two layers at unrelated scales and headings, so the cells never repeat.
+    float a = causticLayer(xz * 0.55 + vec2(time * 0.10, 0.0), time * 0.9);
+    float b = causticLayer(mat2(0.8, -0.6, 0.6, 0.8) * xz * 0.83 + 7.3, time * 0.7 + 3.0);
+    return 0.6 * (a + b) + 0.4 * a * b;
 }
 
 vec3 applyFog(vec3 col, vec3 P) {
@@ -120,6 +174,10 @@ void main()
         perturb(Ng, P, uz, decodeNormal(texture(aoMap, uz))) * w.z);
 
     vec3 albedo = mix(floorAlbedo, rockAlbedo, rockW) * Tint;
+    // Ground the waves keep wet is darker and richer.
+    float sea = seaHeight(P.xz);
+    float aboveSea = P.y - sea;
+    albedo *= mix(0.62, 1.0, smoothstep(0.0, 0.45, aboveSea));
     if (farGrass > 0.5) {
         float far = smoothstep(25.0, 60.0, length(P - cameraPos));
         vec3 grassAlbedo = vec3(0.07, 0.15, 0.025) * (0.85 + 0.3 * vnoise(P.xz * 0.04)) * Tint;
@@ -148,11 +206,24 @@ void main()
 
     vec3 H = normalize(L + V);
     float spec = distributionGGX(max(dot(N, H), 0.0), rough) * 0.04 * PI * 0.25;
-    vec3 direct = lightColor * lit * (albedo + vec3(spec));
+    // Under the sea: the light passes down and back up through the water, which
+    // takes the red first. (Not when the camera is under it too: then the fog does
+    // this for everything, and doing it twice would be too dark.)
+    float depthSea = max(sea - P.y, 0.0);
+    float seen = 1.0 - smoothstep(0.01, 0.12, fogDensity);
+    float sunSea = 1.0;
+    if (seen > 0.0 && depthSea > 0.05) {
+        // Fades in with depth (none on the wet edge), out with depth (the sun's
+        // light thins), and off steep ground, where the flat projection stretches.
+        float k = smoothstep(0.05, 0.45, depthSea) * exp(-depthSea * 0.30) * smoothstep(0.55, 0.9, Ng.y);
+        sunSea = 1.0 + 2.0 * seen * k * caustics(P.xz);
+    }
+    vec3 direct = lightColor * lit * (albedo * sunSea + vec3(spec));
 
     float skyVis = Bake.y * texAO;
     vec3 ambient = albedo * mix(groundAmbient, skyAmbient, N.y * 0.5 + 0.5) * skyVis;
 
-    vec3 color = applyFog(direct + ambient, P);
+    vec3 lightLeft = exp(-depthSea * vec3(0.34, 0.095, 0.05) * 1.5);
+    vec3 color = applyFog((direct + ambient) * mix(vec3(1.0), lightLeft, seen), P);
     FragColor = vec4(pow(aces(color), vec3(1.0 / 2.2)), 1.0);
 }

@@ -68,6 +68,9 @@ void main()
     float lod = 0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)), 1.0));
     float cut = mix(0.5, 0.22, clamp(lod / 3.0, 0.0, 1.0));
     if (cover < cut) discard;
+#ifdef COMPONENG_DEPTH_PREPASS
+    return; // the engine's depth pre-pass only needs the cut-out shape
+#endif
 
     vec3 albedo = mix(a.rgb, b.rgb, Blend) * Tint;
 

@@ -30,6 +30,7 @@
 #include "componeng/renderer/lod/lod_component.hpp"
 #include "componeng/renderer/render_system.hpp"
 #include "componeng/resources/fog.hpp"
+#include "componeng/resources/render_settings.hpp"
 #include "componeng/utils/logger.hpp"
 
 #include <algorithm>
@@ -244,6 +245,10 @@ void spawnLensFlare(ecs::World &world) {
 
 void ForestGame::init(ecs::World &world) {
   world.registerComponents<PlayerComponent, BillboardLodComponent, GrassChunkComponent>();
+
+  // The engine's depth pre-pass re-runs the vertex stage of every tree, grass blade and
+  // terrain patch for a depth-only draw, so it is off unless FOREST_PREPASS=1.
+  world.getResource<resources::RenderSettings>().depthPrepass = std::getenv("FOREST_PREPASS") != nullptr;
 
   // Haze doubles as the sky's horizon colour, so distant ground fades into it.
   world.setResource(resources::Fog{.color = Vec4(0.55f, 0.68f, 0.86f, 1.0f),

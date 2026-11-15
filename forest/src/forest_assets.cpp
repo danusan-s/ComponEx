@@ -47,6 +47,16 @@ renderer::api::RenderState opaque(bool doubleSided) {
   return s;
 }
 
+// For alpha-tested cards (leaves, billboards): the fragment shader `discard`s, so
+// they are Cutout, not Opaque. Drawn with the opaque batches; in the engine's depth
+// pre-pass (when it is on, see FOREST_PREPASS) they use their own fragment shader's
+// alpha test, which foliage.frag and billboard.frag return from early under
+// COMPONENG_DEPTH_PREPASS.
+void makeCutout(renderer::IMaterial &m) {
+  m.setType(renderer::MaterialType::Cutout);
+  m.setRenderState(opaque(true));
+}
+
 void loadTexture(AssetManager &am, const std::string &file, const std::string &name,
                  bool alpha, bool srgb, bool repeat, float anisotropy = 8.0f) {
   renderer::api::TextureDesc desc;
@@ -122,7 +132,7 @@ void registerFoliage(AssetManager &am, const std::string &name, const char *tex,
   am.registerMaterial<renderer::DiffuseMaterial>(name.c_str(), "forest_foliage",
                                                  (std::string(tex) + "_albedo").c_str());
   auto &m = am.getMaterial(am.getMaterialID(name.c_str()));
-  m.setRenderState(opaque(true));
+  makeCutout(m);
   m.setUniform("windAmp", windAmp);
   m.setUniform("crownCenter", crownCenter);
   m.setUniform("crownRadius", crownRadius);
@@ -149,7 +159,7 @@ void registerBillboard(AssetManager &am, const TreeSpecies &s) {
   am.registerMaterial<renderer::DiffuseMaterial>(name.c_str(), "forest_billboard",
                                                  (name + "_albedo").c_str());
   auto &m = am.getMaterial(am.getMaterialID(name.c_str()));
-  m.setRenderState(opaque(true));
+  makeCutout(m);
   m.setUniform("windAmp", 1.0f);
   m.setUniform("views", float(kBillboardViews));
   m.setUniform("atlasCols", float(kBillboardCols));
@@ -273,6 +283,7 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
     auto &m = am.getMaterial(am.getMaterialID("terrain"));
     m.setRenderState(opaque(false));
     m.setUniform("farGrass", grassLodMode() == 3 ? 1.0f : 0.0f);
+    m.setUniform("waterLevel", cfg::kWaterLevel);
     setEnvironment(m);
   }
 
@@ -344,10 +355,12 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
     renderer::api::RenderState state;
     state.blend = renderer::api::BlendMode::Alpha;
     state.depthWrite = false;
+    m.setType(renderer::MaterialType::Transparent);
     m.setRenderState(state);
     m.setTexture("heightMap", am.getTextureID("terrain_heights"));
     m.setUniform("worldHalf", 0.5f * cfg::kWorldSize);
     m.setUniform("heightCells", float(cfg::kCells));
+    m.setUniform("waterLevel", cfg::kWaterLevel);
     m.setUniform("skyColor", Vec3(0.20f, 0.42f, 0.88f));  // as the SkyboxComponent's
     m.setUniform("shallowColor", Vec3(0.05f, 0.34f, 0.36f));
     m.setUniform("deepColor", Vec3(0.004f, 0.045f, 0.15f));
@@ -366,6 +379,7 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
     state.depthTest = false;
     state.depthWrite = false;
     state.blend = renderer::api::BlendMode::Additive;
+    m.setType(renderer::MaterialType::Transparent);
     m.setRenderState(state);
     m.setUniform("aspect", 16.0f / 9.0f);  // the engine letterboxes the view to 16:9
     m.setUniform("sunVisible", 0.0f);
