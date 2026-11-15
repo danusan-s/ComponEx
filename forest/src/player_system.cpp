@@ -123,8 +123,6 @@ void PlayerSystem::onUpdate(const componeng::ecs::SystemState &state) {
           auto climbable = [&](float tx, float tz) {
             float d = std::sqrt((tx - x) * (tx - x) + (tz - z) * (tz - z));
             if (d < 1e-5f) return true;
-            // The sea is not walkable past wading depth: slide along the shore.
-            if (fw.terrain.heightAt(tx, tz) < cfg::kWaterLevel - cfg::kWadeDepth) return false;
             Vec3 n = fw.terrain.normalAt(tx, tz);
             float rise = fw.terrain.heightAt(tx, tz) - tf.position.y;
             return n.y >= kMinSlopeNormalY || rise <= 0.0f;

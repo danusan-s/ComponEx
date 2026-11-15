@@ -72,7 +72,10 @@ void main()
 
     // Underwater (the game turns the fog up to ~0.18, against 0.007 above) there
     // is no sky to see, only the murk: show the fog colour.
-    col = mix(col, horizonColor, smoothstep(0.01, 0.12, fogDensity));
+    // The same glow towards the sun that the fog has (terrain.frag, water.frag),
+    // or the sky meets the fogged ground in a visible seam.
+    vec3 murk = mix(horizonColor, lightColor * vec3(0.55, 0.42, 0.25), pow(s, 5.0) * 0.45);
+    col = mix(col, murk, smoothstep(0.01, 0.12, fogDensity));
 
     FragColor = vec4(pow(aces(col), vec3(1.0 / 2.2)), 1.0);
 }

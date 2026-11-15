@@ -355,12 +355,15 @@ void loadForestAssets(ecs::World &world, const ForestWorld &forest) {
     renderer::api::RenderState state;
     state.blend = renderer::api::BlendMode::Alpha;
     state.depthWrite = false;
+    state.cull = renderer::api::CullMode::None; // seen from below too (water.frag)
     m.setType(renderer::MaterialType::Transparent);
     m.setRenderState(state);
     m.setTexture("heightMap", am.getTextureID("terrain_heights"));
     m.setUniform("worldHalf", 0.5f * cfg::kWorldSize);
     m.setUniform("heightCells", float(cfg::kCells));
     m.setUniform("waterLevel", cfg::kWaterLevel);
+    m.setUniform("airHorizon", Vec3(0.55f, 0.68f, 0.86f));      // as the Fog resource's colour
+    m.setUniform("airSun", Vec3(1.0f, 0.86f, 0.64f) * 3.4f);    // as the sun's light colour
     m.setUniform("skyColor", Vec3(0.20f, 0.42f, 0.88f));  // as the SkyboxComponent's
     m.setUniform("shallowColor", Vec3(0.05f, 0.34f, 0.36f));
     m.setUniform("deepColor", Vec3(0.004f, 0.045f, 0.15f));

@@ -207,23 +207,23 @@ void main()
     vec3 H = normalize(L + V);
     float spec = distributionGGX(max(dot(N, H), 0.0), rough) * 0.04 * PI * 0.25;
     // Under the sea: the light passes down and back up through the water, which
-    // takes the red first. (Not when the camera is under it too: then the fog does
-    // this for everything, and doing it twice would be too dark.)
+    // takes the red first. When the camera is under it too, the fog is the way
+    // back up to the eye, so only the way down is counted here.
     float depthSea = max(sea - P.y, 0.0);
-    float seen = 1.0 - smoothstep(0.01, 0.12, fogDensity);
+    float seen = 1.0 - smoothstep(0.01, 0.12, fogDensity);   // 1: camera above the water
     float sunSea = 1.0;
-    if (seen > 0.0 && depthSea > 0.05) {
+    if (depthSea > 0.05) {
         // Fades in with depth (none on the wet edge), out with depth (the sun's
         // light thins), and off steep ground, where the flat projection stretches.
         float k = smoothstep(0.05, 0.45, depthSea) * exp(-depthSea * 0.30) * smoothstep(0.55, 0.9, Ng.y);
-        sunSea = 1.0 + 2.0 * seen * k * caustics(P.xz);
+        sunSea = 1.0 + 2.0 * k * caustics(P.xz);
     }
     vec3 direct = lightColor * lit * (albedo * sunSea + vec3(spec));
 
     float skyVis = Bake.y * texAO;
     vec3 ambient = albedo * mix(groundAmbient, skyAmbient, N.y * 0.5 + 0.5) * skyVis;
 
-    vec3 lightLeft = exp(-depthSea * vec3(0.34, 0.095, 0.05) * 1.5);
-    vec3 color = applyFog((direct + ambient) * mix(vec3(1.0), lightLeft, seen), P);
+    vec3 lightLeft = exp(-depthSea * vec3(0.34, 0.095, 0.05) * mix(1.0, 1.5, seen));
+    vec3 color = applyFog((direct + ambient) * lightLeft, P);
     FragColor = vec4(pow(aces(color), vec3(1.0 / 2.2)), 1.0);
 }

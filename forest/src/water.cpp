@@ -23,11 +23,15 @@ namespace {
 // Underwater look. The fog is exp(-(d * density)^2), so 0.18 is nearly opaque
 // by 8 m: the player sees little beyond arm's reach, and everything fades to
 // this colour (linear RGB), which the sky shows too.
-constexpr core::Vec3 kUnderwaterFog(0.003f, 0.020f, 0.050f);
-constexpr float kUnderwaterDensity = 0.18f;
+// It is lighter and greener just under the surface, where the light is, and
+// darker and bluer the deeper the camera goes (kDepthFade metres per e-fold).
+constexpr core::Vec3 kUnderwaterFogShallow(0.020f, 0.135f, 0.170f);
+constexpr core::Vec3 kUnderwaterFog(0.003f, 0.022f, 0.060f);
+constexpr float kDepthFade = 6.0f;
+constexpr float kUnderwaterDensity = 0.11f;
 // The sun only barely reaches down here, and what does is blue (this also stops
 // the fog's warm glow towards the sun).
-constexpr core::Vec3 kUnderwaterSun(0.04f, 0.12f, 0.26f);
+constexpr core::Vec3 kUnderwaterSun(0.16f, 0.50f, 0.70f);
 // Metres below the surface over which the effect fades in, so the camera
 // bobbing through the waves does not flicker.
 constexpr float kSurfaceBlend = 0.3f;
@@ -81,16 +85,18 @@ void UnderwaterSystem::onUpdate(const ecs::SystemState &state) {
   const float k = u * u * (3.0f - 2.0f * u);
 
   core::Vec3 above(m_above.fogColor.x, m_above.fogColor.y, m_above.fogColor.z);
-  core::Vec3 c = lerp(above, kUnderwaterFog, k);
+  const float down = std::exp(-std::max(depthBelowSurface(eye, float(world.time)), 0.0f) / kDepthFade);
+  const core::Vec3 murk = lerp(kUnderwaterFog, kUnderwaterFogShallow, down);
+  core::Vec3 c = lerp(above, murk, k);
   fog.color = core::Vec4(c.x, c.y, c.z, m_above.fogColor.w);
   fog.density = m_above.fogDensity + (kUnderwaterDensity - m_above.fogDensity) * k;
 
   world.query().write<renderer::SkyboxComponent>().each([&](renderer::SkyboxComponent &s) {
-    s.color = lerp(m_above.skyColor, kUnderwaterFog, k);
+    s.color = lerp(m_above.skyColor, murk, k);
   });
   world.query().write<renderer::DirectionalLightComponent>().each(
       [&](renderer::DirectionalLightComponent &l) {
-        l.color = lerp(m_above.sunColor, kUnderwaterSun, k);
+        l.color = lerp(m_above.sunColor, kUnderwaterSun * (0.45f + 0.55f * down), k);
       });
 }
 

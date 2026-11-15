@@ -161,7 +161,7 @@ void spawnTrees(ecs::World &world, const ForestWorld &fw) {
     // LOD0 holds to base + perScale * scale metres, LOD1 to `lod1`;
     // FOREST_TREE_LOD="base,perScale,lod1" overrides them (to tune the ranges).
     static const TreeLod lod = [] {
-      TreeLod l{30.0f, 3.0f, 60.0f};
+      TreeLod l{40.0f, 4.0f, 70.0f};
       if (const char *env = std::getenv("FOREST_TREE_LOD"))
         std::sscanf(env, "%f,%f,%f", &l.base, &l.perScale, &l.lod1);
       return l;

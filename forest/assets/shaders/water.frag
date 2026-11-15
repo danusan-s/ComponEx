@@ -44,6 +44,11 @@ uniform vec3 skyColor;       // the sky's zenith colour, reflected
 uniform vec3 skyAmbient;
 uniform vec3 shallowColor;   // linear
 uniform vec3 deepColor;
+// The sky above the water as the forest has it by day (fogColor and lightColor
+// turn into murk under the surface, but the sky seen through the surface from
+// below, Snell's window, is still the real one).
+uniform vec3 airHorizon;
+uniform vec3 airSun;
 
 const float PI = 3.14159265;
 const float G = 9.81;
@@ -115,17 +120,17 @@ vec3 noised(vec2 p) {
 
 // The sky as sky.frag draws it (minus the sun's disc, which the glint covers),
 // for the reflection.
-vec3 skyRadiance(vec3 dir) {
+vec3 skyRadiance(vec3 dir, vec3 horizon, vec3 sunCol) {
     vec3 L = normalize(lightDir);
     float h = max(dir.y, 0.0);
     float s = max(dot(dir, L), 0.0);
-    vec3 col = mix(fogColor.rgb, skyColor, pow(h, 0.42));
-    col += lightColor * vec3(1.0, 0.62, 0.32) * (pow(s, 5.0) * 0.045 + pow(s, 40.0) * 0.12);
+    vec3 col = mix(horizon, skyColor, pow(h, 0.42));
+    col += sunCol * vec3(1.0, 0.62, 0.32) * (pow(s, 5.0) * 0.045 + pow(s, 40.0) * 0.12);
     if (dir.y > 0.01) {
         vec2 p = dir.xz / (dir.y + 0.12) * 0.75 + vec2(time * 0.01, time * 0.004);
         float c = smoothstep(0.50, 0.82, fbm(p * 1.4));
         float fade = smoothstep(0.01, 0.22, dir.y);
-        vec3 cloud = mix(vec3(0.75, 0.80, 0.90), lightColor * vec3(1.0, 0.92, 0.80) * 0.5, pow(s, 3.0) + 0.25);
+        vec3 cloud = mix(vec3(0.75, 0.80, 0.90), sunCol * vec3(1.0, 0.92, 0.80) * 0.5, pow(s, 3.0) + 0.25);
         col = mix(col, cloud, c * fade * 0.8);
     }
     return col;
@@ -284,7 +289,7 @@ void main()
     // ground: a ray that would go below the horizon is mirrored back up.
     vec3 R = reflect(-V, normalize(mix(N, Nsoft, 0.5)));
     R.y = abs(R.y);
-    vec3 sky = skyRadiance(normalize(R));
+    vec3 sky = skyRadiance(normalize(R), fogColor.rgb, lightColor);
 
     // The sun's glint: GGX, as narrow as the ripples are sharp and widened by
     // the detail too fine to resolve.
@@ -329,6 +334,38 @@ void main()
     color = color / max(alpha, 1e-3);
     color = mix(color, foamColor, foam);
     alpha = max(alpha, foam * 0.92);
+
+    // --- From below: Snell's window ---------------------------------------------
+    // Looking up through the surface you see the whole sky squeezed into a cone
+    // about 48 degrees across, bent and broken by the ripples; past its edge the
+    // surface is a mirror, and what it mirrors is the murk. The surface is
+    // opaque from here, so it hides what is above it.
+    if (below) {
+        const float eta = 1.33;
+        vec3 I = -V;
+        vec3 T = refract(I, N, eta);          // N faces down, into the water
+        float cosi = clamp(dot(-I, N), 0.0, 1.0);
+        float sint = eta * sqrt(max(1.0 - cosi * cosi, 0.0));
+        float F = 1.0;                        // total internal reflection
+        if (sint < 1.0) {
+            float cost = sqrt(1.0 - sint * sint);
+            float rs = (eta * cosi - cost) / (eta * cosi + cost);
+            float rp = (eta * cost - cosi) / (eta * cost + cosi);
+            F = 0.5 * (rs * rs + rp * rp);
+        }
+        vec3 win = vec3(0.0);
+        if (dot(T, T) > 0.0) {
+            T = normalize(T);
+            win = skyRadiance(T, airHorizon, airSun);
+            float sd = max(dot(T, L), 0.0);
+            win += airSun * (pow(sd, 500.0) * 6.0 + pow(sd, 40.0) * 0.12);
+        }
+        // The water takes the red first, over the way up to the surface.
+        win *= exp(-dist * vec3(0.30, 0.085, 0.045)) * 0.6;
+        vec3 murk = fogColor.rgb * 0.75;
+        color = mix(win, murk, F);
+        alpha = 1.0;
+    }
 
     // --- Fog, then the same tone map as everything else -------------------------
     vec3 v = P - cameraPos;
