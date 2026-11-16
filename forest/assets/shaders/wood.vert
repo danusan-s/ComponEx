@@ -10,6 +10,7 @@ layout(location = 2) in vec2 aUV;
 
 layout(location = 3) in mat4 instanceModel;
 layout(location = 7) in vec4 instanceColor; // rgb tint, a = baked sun visibility
+layout(location = 8) in float instanceFade;  // LOD cross-fade, 0 = none
 
 layout(std140) uniform FrameData {
     mat4 viewProj;
@@ -28,6 +29,7 @@ out vec3 Normal;
 out vec2 UV;
 out vec3 Tint;
 out float Vis;
+flat out float LodFade;
 out float Height;
 
 vec3 sway(vec3 base, float h) {
@@ -55,6 +57,7 @@ void main()
     UV = aUV;
     Tint = instanceColor.rgb;
     Vis = instanceColor.a;
+    LodFade = instanceFade;
     Height = h;
     gl_Position = viewProj * vec4(world, 1.0);
 }

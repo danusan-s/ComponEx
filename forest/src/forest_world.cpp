@@ -177,7 +177,7 @@ void addPropObstacles(ForestWorld &w, const PropPlacement &p) {
     }
   } else if (std::strncmp(name, "rock", 4) == 0 || std::strcmp(name, "boulder") == 0) {
     w.obstacles.add({p.pos.x, p.pos.z, 0.5f * 0.5f * (m.extentX + m.extentZ) * p.scale * 0.8f,
-                     m.height * p.scale * 0.85f, false, p.pos.y});
+                     m.height * p.scale * 0.85f, true, p.pos.y});
   }
 }
 

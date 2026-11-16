@@ -6,6 +6,7 @@ in vec2 UV;
 in vec3 Tint;
 in float Vis;
 in float Height;
+flat in float LodFade;
 
 out vec4 FragColor;
 
@@ -62,8 +63,35 @@ vec3 applyFog(vec3 col, vec3 P) {
     return mix(col, fc, f);
 }
 
+// LOD cross-fade (RenderSettings::lodDither); the same as the engine's diffuse.frag.
+// LodFade is 0 for an ordinary instance. While an entity changes LOD level its
+// old mesh has LodFade rising 0 -> 1 and the new one -1 -> 0; each discards its
+// share of a screen-space dither pattern and the two shares are complementary.
+// The pattern depends only on the pixel, so the depth pre-pass and the colour
+// pass discard identically.
+float lodDither() {
+    // 8x8 Bayer matrix, by bit tricks: 64 evenly spread levels, and an exact
+    // checkerboard at one half. (Interleaved gradient noise showed diagonal lines.)
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    int x = p.x & 7, y = (p.x ^ p.y) & 7;
+    int m = ((y & 1) << 5) | ((x & 1) << 4) | ((y & 2) << 2) | ((x & 2) << 1) |
+            ((y & 4) >> 1) | ((x & 4) >> 2);
+    return (float(m) + 0.5) / 64.0;
+}
+
+bool lodFadeDiscard() {
+    if (LodFade == 0.0) return false;
+    float n = lodDither();
+    return LodFade > 0.0 ? n < LodFade : n >= 1.0 + LodFade;
+}
+
 void main()
 {
+    if (lodFadeDiscard()) discard;
+#ifdef COMPONENG_DEPTH_PREPASS
+    return; // a fading batch's depth pre-pass only needs the dither above
+#endif
+
     vec3 Ng = normalize(Normal);
     if (!gl_FrontFacing) Ng = -Ng;
 

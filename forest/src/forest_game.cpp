@@ -10,7 +10,9 @@
 #include "grass.hpp"
 #include "lens_flare.hpp"
 #include "player_system.hpp"
-#include "screenshot.hpp"
+#ifdef FOREST_DEV_TOOLS
+#include "screenshot.hpp" // forest/dev/, not part of the repo (see forest/CMakeLists.txt)
+#endif
 #include "species_data.hpp"
 #include "water.hpp"
 
@@ -249,6 +251,14 @@ void ForestGame::init(ecs::World &world) {
   // The engine's depth pre-pass re-runs the vertex stage of every tree, grass blade and
   // terrain patch for a depth-only draw, so it is off unless FOREST_PREPASS=1.
   world.getResource<resources::RenderSettings>().depthPrepass = std::getenv("FOREST_PREPASS") != nullptr;
+  // The LOD cross-fade (the engine's default is 0.35 s) is slower here: the
+  // levels differ a lot in leaf size, and a quick dissolve reads as a flicker.
+  // FOREST_LOD_FADE=<seconds> overrides it.
+  {
+    float fade = 0.9f;
+    if (const char *env = std::getenv("FOREST_LOD_FADE")) fade = float(std::atof(env));
+    world.getResource<resources::RenderSettings>().lodFadeSeconds = fade;
+  }
 
   // Haze doubles as the sky's horizon colour, so distant ground fades into it.
   world.setResource(resources::Fog{.color = Vec4(0.55f, 0.68f, 0.86f, 1.0f),
@@ -323,10 +333,12 @@ void ForestGame::init(ecs::World &world) {
   world.registerSystem<BillboardLodSystem>(ecs::SystemGroup::Presentation);
   world.registerSystem<UnderwaterSystem>(ecs::SystemGroup::Presentation);
   world.registerSystem<GrassChunkSystem>(ecs::SystemGroup::Presentation);
+#ifdef FOREST_DEV_TOOLS
   if (std::getenv("FOREST_SHOT")) {
     world.registerSystem<ScreenshotSystem>(ecs::SystemGroup::Presentation);
     world.addSystemDependencies<ScreenshotSystem, renderer::RenderSystem>();
   }
+#endif
   // Last thing in the frame: waits out whatever is left of the frame budget.
   world.registerSystem<FrameLimiterSystem>(ecs::SystemGroup::Presentation);
   world.addSystemDependencies<FrameLimiterSystem, renderer::RenderSystem>();

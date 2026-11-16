@@ -39,6 +39,9 @@ M = os.path.join(WORK, "models")
 #             so keep `grow` at 1 (growing about the centroid lifts them off the
 #             branch they sit on) and `ratio` high (a harsh global decimation
 #             leaves ~5 faces per twig: flat slivers)
+# Foliage LODs keep keep*grow^2 about constant (the canopy's coverage), and grow
+# by only ~1.35x then ~1.6x per level, so the cross-fade between levels does not
+# swap a few big leaves for many small ones.
 # `lods` is a list of parameter dicts, index = LOD level. A part missing from
 # a LOD (None) is dropped at that level.
 # ---------------------------------------------------------------------------
@@ -50,7 +53,7 @@ TREES = [
              dict(name="branch", mat="island_tree_02_branches", kind="wood", tex="island_branches",
                   lods=[dict(keep=0.12, grow=1.0, ratio=0.5), None, None]),
              dict(name="leaf", mat="island_tree_02_leaves", kind="foliage", tex="island_leaves",
-                  lods=[dict(keep=0.36, grow=1.75, ratio=0.28), dict(keep=0.14, grow=2.8, ratio=0.28), dict(keep=0.03, grow=6.0, ratio=0.4)]),
+                  lods=[dict(keep=0.36, grow=1.75, ratio=0.28), dict(keep=0.20, grow=2.35, ratio=0.28), dict(keep=0.078, grow=3.75, ratio=0.4)]),
          ]),
     dict(name="small", src="tree_small_02", obj=None, scale_hint=(2.2, 3.4),
          parts=[
@@ -59,7 +62,7 @@ TREES = [
              dict(name="branch", mat="tree_small_02_branches", kind="wood", tex="small_branches",
                   lods=[dict(keep=0.25, grow=1.0, ratio=0.5), None, None]),
              dict(name="leaf", mat="tree_small_02_leaves", kind="foliage", tex="small_leaves",
-                  lods=[dict(keep=0.18, grow=2.35, ratio=0.27), dict(keep=0.06, grow=4.0, ratio=0.27), dict(keep=0.014, grow=8.5, ratio=0.4)]),
+                  lods=[dict(keep=0.18, grow=2.35, ratio=0.27), dict(keep=0.10, grow=3.15, ratio=0.27), dict(keep=0.04, grow=5.0, ratio=0.4)]),
          ]),
 ]
 for variant in "abc":
@@ -70,7 +73,7 @@ for variant in "abc":
             dict(name="trunk", mat="fir_sapling_medium_branches", kind="wood", tex="fir_branches",
                  lods=[dict(ratio=0.25), dict(ratio=0.3, min_faces=24, drop=0, branch_keep=0.3), dict(ratio=0.3, min_faces=40, drop=300)]),
             dict(name="leaf", mat="fir_sapling_medium_twigs", kind="foliage", tex="fir_twigs",
-                 lods=[dict(keep=0.34, grow=1.85, ratio=0.5), dict(keep=0.13, grow=3.0, ratio=0.5), dict(keep=0.03, grow=5.6, ratio=0.5)]),
+                 lods=[dict(keep=0.34, grow=1.85, ratio=0.5), dict(keep=0.186, grow=2.5, ratio=0.5), dict(keep=0.073, grow=4.0, ratio=0.5)]),
         ]))
 
 PROPS = [

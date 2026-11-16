@@ -24,38 +24,63 @@ constexpr float kWalk = 4.2f, kSprint = 7.4f, kCrouch = 1.9f;
 constexpr float kJump = 7.0f, kGravity = 20.0f;
 constexpr float kMinSlopeNormalY = 0.62f;  // ~52 degrees: steeper cannot be climbed
 constexpr float kStepUp = 0.45f;
+constexpr float kSlideSpeed = 4.5f;        // m/s off the top of a trunk or log
+// In the air the feet may be this far below an obstacle's top and still get up
+// onto it (a mantle), instead of being shoved off its side.
+constexpr float kAirStepUp = 0.6f;
+// How fast an overlapping obstacle may push the player out, so landing or
+// jumping into one slides the player off over a few frames instead of
+// teleporting them out of it.
+constexpr float kPushSpeed = 7.0f;
+constexpr float kCoyoteTime = 0.12f;       // jump still works this long after leaving the ground
 constexpr float kEyeStanding = 1.68f, kEyeCrouched = 1.05f;
 constexpr float kMouseSensitivity = 0.085f;
 
+// What the feet stand on at (x, z).
+struct Ground {
+  float y;
+  // Set when that is the top of an obstacle that is not flat enough to stay on
+  // (a rock, a trunk): the player slides off, away from (slideX, slideZ).
+  bool slide = false;
+  float slideX = 0.0f, slideZ = 0.0f;
+};
+
 // Highest surface the feet can stand on at (x, z): the terrain, or the top of
-// a flat obstacle (a stump) the feet are already roughly level with.
-float groundAt(const ForestWorld &fw, float x, float z, float feetY) {
-  float g = fw.terrain.heightAt(x, z);
+// an obstacle the feet are already roughly level with (a stump to stay on, a
+// rock to stand on, a trunk or log to land on and slide off).
+Ground groundAt(const ForestWorld &fw, float x, float z, float feetY, float stepUp) {
+  Ground g{fw.terrain.heightAt(x, z)};
   fw.obstacles.query(x, z, 0.0f, [&](const Obstacle &o) {
-    if (!o.walkable) return;
     float dx = x - o.x, dz = z - o.z;
     float top = o.baseY + o.top;
-    if (dx * dx + dz * dz < o.r * o.r && feetY >= top - kStepUp) g = std::max(g, top);
+    if (dx * dx + dz * dz < o.r * o.r && feetY >= top - stepUp && top > g.y) {
+      g.y = top;
+      g.slide = !o.walkable;
+      g.slideX = o.x;
+      g.slideZ = o.z;
+    }
   });
   return g;
 }
 
 // Pushes (x, z) out of every obstacle it overlaps, and removes the part of the
 // velocity that points into it so the player slides along trunks.
-void resolveObstacles(const ForestWorld &fw, float &x, float &z, float feetY, Vec3 &vel) {
+void resolveObstacles(const ForestWorld &fw, float &x, float &z, float feetY, Vec3 &vel,
+                      float reach, float maxPush) {
   for (int pass = 0; pass < 3; ++pass) {
     bool moved = false;
     fw.obstacles.query(x, z, kRadius, [&](const Obstacle &o) {
       // Feet above the top: walk over (or onto) it.
-      if (feetY >= o.baseY + o.top - 0.12f) return;
+      if (feetY >= o.baseY + o.top - reach) return;
       float dx = x - o.x, dz = z - o.z;
       float minD = o.r + kRadius;
       float d2 = dx * dx + dz * dz;
       if (d2 >= minD * minD) return;
       float d = std::sqrt(d2);
       float nx = d > 1e-5f ? dx / d : 1.0f, nz = d > 1e-5f ? dz / d : 0.0f;
-      x += nx * (minD - d);
-      z += nz * (minD - d);
+      float push = std::min(minD - d, maxPush);
+      x += nx * push;
+      z += nz * push;
       float into = vel.x * nx + vel.z * nz;
       if (into < 0.0f) {
         vel.x -= into * nx;
@@ -107,9 +132,12 @@ void PlayerSystem::onUpdate(const componeng::ecs::SystemState &state) {
         p.velocity.x += (wish.x * speed - p.velocity.x) * k;
         p.velocity.z += (wish.z * speed - p.velocity.z) * k;
 
-        if (p.onGround && actions.pressed(input::Action::Jump)) {
+        // Coyote time: still allowed to jump for a moment after walking off an edge.
+        p.coyote = p.onGround ? kCoyoteTime : std::max(p.coyote - dt, 0.0f);
+        if (p.coyote > 0.0f && actions.pressed(input::Action::Jump)) {
           p.velocity.y = kJump;
           p.onGround = false;
+          p.coyote = 0.0f;
         }
         p.velocity.y -= kGravity * dt;
 
@@ -135,7 +163,8 @@ void PlayerSystem::onUpdate(const componeng::ecs::SystemState &state) {
             p.velocity.z = (nz - z) / dt;
           }
         }
-        resolveObstacles(fw, nx, nz, tf.position.y, p.velocity);
+        resolveObstacles(fw, nx, nz, tf.position.y, p.velocity, p.onGround ? 0.12f : kAirStepUp,
+                         kPushSpeed * dt);
 
         float lim = fw.terrain.half() - 12.0f;
         nx = std::clamp(nx, -lim, lim);
@@ -143,7 +172,8 @@ void PlayerSystem::onUpdate(const componeng::ecs::SystemState &state) {
 
         // --- Vertical ----------------------------------------------------------
         float y = tf.position.y + p.velocity.y * dt;
-        float ground = groundAt(fw, nx, nz, tf.position.y);
+        Ground g = groundAt(fw, nx, nz, tf.position.y, p.onGround ? kStepUp : kAirStepUp);
+        const float ground = g.y;
         if (y <= ground) {
           y = ground;
           if (p.velocity.y < 0.0f) p.velocity.y = 0.0f;
@@ -152,6 +182,21 @@ void PlayerSystem::onUpdate(const componeng::ecs::SystemState &state) {
           y = ground;  // walking downhill: stay on the surface instead of hopping
         } else {
           p.onGround = false;
+        }
+        if (g.slide && y <= ground + 1e-4f) {
+          // Landed on top of a rock or trunk: slide off it, away from its
+          // centre, instead of being shoved out sideways once the feet sink in.
+          float sx = nx - g.slideX, sz = nz - g.slideZ;
+          float sd = std::sqrt(sx * sx + sz * sz);
+          if (sd > 1e-4f) { sx /= sd; sz /= sd; }
+          else { sx = 1.0f; sz = 0.0f; }
+          float into = p.velocity.x * sx + p.velocity.z * sz;
+          if (into < kSlideSpeed) {
+            p.velocity.x += (kSlideSpeed - into) * sx;
+            p.velocity.z += (kSlideSpeed - into) * sz;
+          }
+          nx += sx * kSlideSpeed * dt;
+          nz += sz * kSlideSpeed * dt;
         }
         tf.position = Vec3(nx, y, nz);
 
