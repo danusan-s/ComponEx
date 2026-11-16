@@ -32,9 +32,11 @@ constexpr float kUnderwaterDensity = 0.11f;
 // The sun only barely reaches down here, and what does is blue (this also stops
 // the fog's warm glow towards the sun).
 constexpr core::Vec3 kUnderwaterSun(0.16f, 0.50f, 0.70f);
-// Metres below the surface over which the effect fades in, so the camera
-// bobbing through the waves does not flicker.
-constexpr float kSurfaceBlend = 0.3f;
+// Metres below the surface over which the effect fades in. It has to be nearly
+// nothing: water.frag turns the surface into its underside the moment the eye is
+// below it, an opaque mirror tinted by the fog colour, so a fog that is still the
+// pale one above water makes the whole screen a white wash.
+constexpr float kSurfaceBlend = 0.01f;
 
 // The swells, as in water.vert: direction (deg), wavelength (m), amplitude (m), phase.
 constexpr float kSwells[3][4] = {{20.0f, 90.0f, 0.45f, 0.0f},

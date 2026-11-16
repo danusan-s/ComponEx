@@ -16,6 +16,7 @@ struct PlayerComponent {
   float smoothY = 0.0f;  // camera height smoothing while walking over bumps
   float bobPhase = 0.0f;
   bool onGround = false;
+  bool swimming = false; // in the water: moves where it looks, no gravity
   float coyote = 0.0f;   // seconds left in which a jump still works after leaving the ground
 };
 

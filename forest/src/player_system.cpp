@@ -3,6 +3,7 @@
 #include "components.hpp"
 #include "forest_config.hpp"
 #include "forest_world.hpp"
+#include "water.hpp"
 
 #include "componeng/camera/main_camera.hpp"
 #include "componeng/core/transform_component.hpp"
@@ -35,6 +36,17 @@ constexpr float kPushSpeed = 7.0f;
 constexpr float kCoyoteTime = 0.12f;       // jump still works this long after leaving the ground
 constexpr float kEyeStanding = 1.68f, kEyeCrouched = 1.05f;
 constexpr float kMouseSensitivity = 0.085f;
+
+// Swimming. The feet start swimming once this far under the surface, and stop
+// (back to walking) only when they touch the ground where the water is shallower
+// than kWadeDepth. The gap between the two keeps the mode from flickering at the
+// shore.
+constexpr float kSwimDepth = 1.1f, kWadeDepth = 0.8f;
+constexpr float kSwim = 2.8f, kSwimSprint = 4.6f;
+constexpr float kSwimControl = 4.0f;       // water is heavy: slow to speed up and slow down
+constexpr float kEyeSwim = 0.6f;           // eye above the body's origin while swimming
+constexpr float kHeadAboveWater = 0.1f;    // the eye may rise this far above the surface, no further
+constexpr float kSwimBuoyancy = 3.0f;      // 1/s: how fast an idle swimmer floats to the surface
 
 // What the feet stand on at (x, z).
 struct Ground {
@@ -92,12 +104,97 @@ void resolveObstacles(const ForestWorld &fw, float &x, float &z, float feetY, Ve
   }
 }
 
+// One frame of swimming: the player moves where they look (forward/back along
+// the view direction, strafing level), Jump rises and Crouch dives. The eye is
+// capped just above the surface, so looking up while at the surface does not
+// lift the player out of the water: it swims along the surface instead. Touching
+// the ground in shallow water hands control back to walking.
+void swimStep(const ForestWorld &fw, PlayerComponent &p, componeng::core::TransformComponent &tf,
+              componeng::core::TransformComponent &camTf, const componeng::input::ActionState &actions,
+              Vec3 forward, Vec3 right, float dt, float t) {
+  namespace input = componeng::input;
+
+  float f = (actions.down(input::Action::MoveForward) ? 1.0f : 0.0f) -
+            (actions.down(input::Action::MoveBackward) ? 1.0f : 0.0f);
+  float s = (actions.down(input::Action::MoveRight) ? 1.0f : 0.0f) -
+            (actions.down(input::Action::MoveLeft) ? 1.0f : 0.0f);
+  float vert = (actions.down(input::Action::Jump) ? 1.0f : 0.0f) -
+               (actions.down(input::Action::Crouch) ? 1.0f : 0.0f);
+
+  float pitchRad = componeng::core::radians(p.pitch);
+  float cp = std::cos(pitchRad), sp = std::sin(pitchRad);
+
+  Vec3 flat = forward * f + right * s;  // level motion at full strength
+  float flatLen = std::sqrt(flat.x * flat.x + flat.z * flat.z);
+  if (flatLen > 1.0f) flat = flat * (1.0f / flatLen);
+
+  Vec3 wish = forward * (cp * f) + right * s;  // look-directed motion
+  wish.y = sp * f + vert;
+
+  float surface = waterSurfaceHeight(tf.position.x, tf.position.z, t);
+  float maxY = surface + kHeadAboveWater - kEyeSwim;
+  bool atSurface = tf.position.y >= maxY - 0.08f;
+  if (atSurface && wish.y > 0.0f) {
+    // The view points up, but there is nowhere to go: keep the full speed along
+    // the surface instead of crawling because the look direction is steep.
+    wish = flat;
+  }
+  float wl = std::sqrt(wish.x * wish.x + wish.y * wish.y + wish.z * wish.z);
+  if (wl > 1.0f) wish = wish * (1.0f / wl);
+
+  float speed = actions.down(input::Action::Sprint) ? kSwimSprint : kSwim;
+  Vec3 target = wish * speed;
+  if (wl < 1e-4f) target.y = std::clamp((maxY - tf.position.y) * kSwimBuoyancy, -1.2f, 1.2f);
+
+  float k = 1.0f - std::exp(-kSwimControl * dt);
+  p.velocity.x += (target.x - p.velocity.x) * k;
+  p.velocity.y += (target.y - p.velocity.y) * k;
+  p.velocity.z += (target.z - p.velocity.z) * k;
+
+  float nx = tf.position.x + p.velocity.x * dt, nz = tf.position.z + p.velocity.z * dt;
+  resolveObstacles(fw, nx, nz, tf.position.y, p.velocity, 0.12f, kPushSpeed * dt);
+  float lim = fw.terrain.half() - 12.0f;
+  nx = std::clamp(nx, -lim, lim);
+  nz = std::clamp(nz, -lim, lim);
+
+  // Ceiling (the surface where the player ended up), then floor.
+  float y = tf.position.y + p.velocity.y * dt;
+  float newSurface = waterSurfaceHeight(nx, nz, t);
+  float newMaxY = newSurface + kHeadAboveWater - kEyeSwim;
+  if (y > newMaxY) {
+    y = newMaxY;
+    if (p.velocity.y > 0.0f) p.velocity.y = 0.0f;
+  }
+  Ground g = groundAt(fw, nx, nz, tf.position.y, kAirStepUp);
+  bool touching = false;
+  if (y <= g.y + 1e-4f) {
+    y = g.y;
+    if (p.velocity.y < 0.0f) p.velocity.y = 0.0f;
+    touching = true;
+  }
+  tf.position = Vec3(nx, y, nz);
+
+  if (touching && newSurface - g.y < kWadeDepth) {
+    // Feet down in shallow water: wade.
+    p.swimming = false;
+    p.onGround = true;
+    p.velocity.y = 0.0f;
+    p.coyote = kCoyoteTime;
+  }
+
+  p.eye += (kEyeSwim - p.eye) * (1.0f - std::exp(-10.0f * dt));
+  p.smoothY = y;
+  camTf.position = Vec3(nx, y + p.eye, nz);
+  camTf.rotation = Vec3(p.pitch, p.yaw, 0.0f);
+}
+
 } // namespace
 
 void PlayerSystem::onUpdate(const componeng::ecs::SystemState &state) {
   using namespace componeng;
   ecs::World &world = *state.world;
   const float dt = std::min(state.deltaTime, 0.05f);  // the first frame includes loading time
+  const float t = float(world.time);                  // for the water's surface
 
   const ForestWorld &fw = world.getResource<ForestWorld>();
   auto &input = world.getResource<input::InputState>();
@@ -115,6 +212,16 @@ void PlayerSystem::onUpdate(const componeng::ecs::SystemState &state) {
         float yawRad = core::radians(p.yaw);
         Vec3 forward(std::cos(yawRad), 0.0f, std::sin(yawRad));
         Vec3 right(-forward.z, 0.0f, forward.x);
+
+        // --- Swimming ------------------------------------------------------
+        if (!p.swimming && depthBelowSurface(tf.position, t) > kSwimDepth) {
+          p.swimming = true;
+          p.onGround = false;
+        }
+        if (p.swimming) {
+          swimStep(fw, p, tf, camTf, actions, forward, right, dt, t);
+          return;
+        }
 
         // --- Wish velocity -------------------------------------------------
         Vec3 wish(0.0f);

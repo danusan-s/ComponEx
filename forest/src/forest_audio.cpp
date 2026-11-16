@@ -2,6 +2,7 @@
 
 #include "components.hpp"
 #include "forest_config.hpp"
+#include "water.hpp"
 
 #include "componeng/audio/audio_component.hpp"
 #include "componeng/audio/audio_manager.hpp"
@@ -24,6 +25,13 @@ constexpr float kAmbientVolume = 0.25f;
 constexpr float kFootstepVolume = 2.4f;
 // The wading recording is much hotter: its steps peak around -2 dB.
 constexpr float kWaterStepVolume = 0.6f;
+
+// The swimming recordings are quieter still (peaks near -21 dB). The underwater
+// one is the same take, deepened and low-passed with ffmpeg ahead of time, the
+// same length so the two swap at any moment without the stroke jumping.
+constexpr float kSwimPace = 2.8f;  // m/s the swimming recording is matched to
+constexpr float kSwimVolume = 5.0f;
+constexpr float kSwimUnderVolume = 5.5f;
 
 // Below this planar speed (m/s) the player counts as standing still.
 constexpr float kMovingSpeed = 0.8f;
@@ -72,7 +80,25 @@ void setupForestAudio(ecs::World &world) {
                                             .loop = true,
                                             .volume = kWaterStepVolume,
                                             .is3D = false});
-  world.setResource(FootstepAudio{steps, splashes});
+
+  audio.registerSound(assetPath("sounds/swimming.mp3").c_str(), "forest_swimming");
+  audio.registerSound(assetPath("sounds/underwater_swimming.mp3").c_str(),
+                      "forest_underwater_swimming");
+  ecs::EntityID swim = world.createEntity();
+  world.addComponents(swim, core::TransformComponent{},
+                      audio::AudioComponent{.audioName = "forest_swimming",
+                                            .playOnAwake = false,
+                                            .loop = true,
+                                            .volume = kSwimVolume,
+                                            .is3D = false});
+  ecs::EntityID swimUnder = world.createEntity();
+  world.addComponents(swimUnder, core::TransformComponent{},
+                      audio::AudioComponent{.audioName = "forest_underwater_swimming",
+                                            .playOnAwake = false,
+                                            .loop = true,
+                                            .volume = kSwimUnderVolume,
+                                            .is3D = false});
+  world.setResource(FootstepAudio{steps, splashes, swim, swimUnder});
 }
 
 void FootstepSystem::onUpdate(const ecs::SystemState &state) {
@@ -83,13 +109,19 @@ void FootstepSystem::onUpdate(const ecs::SystemState &state) {
     return;
   auto &dirt = world.getComponent<audio::AudioComponent>(ids.dirt);
   auto &water = world.getComponent<audio::AudioComponent>(ids.water);
+  if (!world.hasComponent<audio::AudioComponent>(ids.swim) ||
+      !world.hasComponent<audio::AudioComponent>(ids.swimUnder))
+    return;
+  auto &swim = world.getComponent<audio::AudioComponent>(ids.swim);
+  auto &swimUnder = world.getComponent<audio::AudioComponent>(ids.swimUnder);
+  const float t = float(world.time);
 
   world.query()
       .read<PlayerComponent, core::TransformComponent>()
       .each([&](const PlayerComponent &p, const core::TransformComponent &tf) {
         float planar =
             std::sqrt(p.velocity.x * p.velocity.x + p.velocity.z * p.velocity.z);
-        bool walking = p.onGround && planar > kMovingSpeed;
+        bool walking = p.onGround && !p.swimming && planar > kMovingSpeed;
         // Feet below the surface: wading, so splashes instead of dirt.
         bool wading = tf.position.y < cfg::kWaterLevel;
         dirt.play = walking && !wading;
@@ -100,6 +132,16 @@ void FootstepSystem::onUpdate(const ecs::SystemState &state) {
         float level = std::clamp(pace, 0.4f, 1.0f);
         dirt.volume = kFootstepVolume * level;
         water.volume = kWaterStepVolume * level;
+
+        // Swimming: the surface recording while the head is out of the water,
+        // the muffled one once it is under.
+        float speed = std::sqrt(planar * planar + p.velocity.y * p.velocity.y);
+        bool stroking = p.swimming && speed > kMovingSpeed;
+        bool headUnder =
+            depthBelowSurface(tf.position + core::Vec3(0.0f, p.eye, 0.0f), t) > 0.0f;
+        swim.play = stroking && !headUnder;
+        swimUnder.play = stroking && headUnder;
+        swim.pitch = swimUnder.pitch = std::clamp(speed / kSwimPace, 0.8f, 1.3f);
       });
 }
 

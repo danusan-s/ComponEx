@@ -4,7 +4,10 @@
 
 namespace forest {
 
-// First-person walking controller. Runs before the engine's CameraSystem so
+// First-person walking and swimming controller. In water deep enough to swim in
+// the player moves where they look, but stays in the water (looking up at the
+// surface does not fly); touching the ground in shallow water switches back to
+// walking. Runs before the engine's CameraSystem so
 // the view it computes is this frame's.
 //
 // Collision is the game's own: the engine's physics has boxes and spheres only,
