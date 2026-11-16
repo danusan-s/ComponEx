@@ -17,12 +17,13 @@ const float G = 1e-3f; // Gravitational constant (scaled for simulation)
 void GravitySystem::onUpdate(const ecs::SystemState &state) {
   float dt = state.deltaTime;
 
-  auto view =
-      state.world
-          ->query<TransformComponent, RigidBodyComponent, CelestialComponent>();
+  auto view = state.world->query()
+                  .read<TransformComponent>()
+                  .write<RigidBodyComponent>()
+                  .read<CelestialComponent>();
 
-  std::vector<std::tuple<TransformComponent &, RigidBodyComponent &,
-                         CelestialComponent &>>
+  std::vector<std::tuple<const TransformComponent &, RigidBodyComponent &,
+                         const CelestialComponent &>>
       planets;
 
   for (auto &&item : view) {

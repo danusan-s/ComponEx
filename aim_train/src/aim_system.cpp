@@ -77,7 +77,7 @@ void AimSystem::onUpdate(const ecs::SystemState &state) {
   core::DebugUI::addValue("Score", static_cast<float>(m_score));
 
   float dt = state.deltaTime;
-  state.world->query<core::TransformComponent, OrbComponent>().each(
+  state.world->query().write<core::TransformComponent, OrbComponent>().each(
       [dt](core::TransformComponent &t, OrbComponent &o) {
         o.phase += o.speed * dt;
         t.position.x = cos(o.phase) * o.radius;
@@ -98,10 +98,12 @@ void AimSystem::onUpdate(const ecs::SystemState &state) {
   };
   std::vector<Target> targets;
 
-  auto q = state.world->query<core::TransformComponent,
-                              physics::ColliderComponent, OrbComponent>();
-  q.eachWithEntity([&](ecs::EntityID entity, core::TransformComponent &t,
-                       physics::ColliderComponent &c, OrbComponent &) {
+  auto q = state.world->query()
+               .read<core::TransformComponent, physics::ColliderComponent,
+                     OrbComponent>();
+  q.eachWithEntity([&](ecs::EntityID entity, const core::TransformComponent &t,
+                       const physics::ColliderComponent &c,
+                       const OrbComponent &) {
     if (c.type == physics::ColliderType::Sphere) {
       targets.push_back({entity, t.position + c.transform.position,
                          t.scale.x * c.transform.scale.x});
