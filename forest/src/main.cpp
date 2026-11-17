@@ -1,3 +1,4 @@
+#include "componeng/core/default_plugins.hpp"
 #include "componeng/core/engine.hpp"
 #include "componeng/utils/utils.hpp"
 #include "forest_game.hpp"
@@ -14,12 +15,10 @@ int main() {
   // The shaders, models and textures are in forest/assets, not the engine tree.
   componeng::utils::Utils::addAssetRoot(FOREST_ROOT_DIR);
 
-  componeng::core::Engine &engine = componeng::core::Engine::get();
-  engine.init();
+  componeng::core::DefaultPlugins plugins;
+  plugins.window.title = "Forest";
 
-  forest::ForestGame game;
-  engine.run(game);
-
-  engine.shutdown();
+  componeng::core::Engine engine;
+  engine.add(plugins).add(forest::ForestGame{}).run();
   return 0;
 }

@@ -33,6 +33,10 @@ struct LaunchConfig {
   bool autoJoinLocal = false;
   std::string address; // "ip:port" to join (when !host)
   uint16_t port = kDefaultPort; // local UDP port; 0 picks any free one
+  // Internet play: learn our public address from STUN and swap invite codes.
+  // When joining, `address` holds the host's invite code (may be empty: it can
+  // be pasted into the terminal later).
+  bool nat = false;
 };
 
 } // namespace multiplayer_demo

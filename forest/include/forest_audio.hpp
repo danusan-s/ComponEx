@@ -18,6 +18,8 @@ struct FootstepAudio {
   componeng::ecs::EntityID water = componeng::ecs::INVALID_ENTITY;
   componeng::ecs::EntityID swim = componeng::ecs::INVALID_ENTITY;      // head above the water
   componeng::ecs::EntityID swimUnder = componeng::ecs::INVALID_ENTITY; // head below it
+  componeng::ecs::EntityID ambient = componeng::ecs::INVALID_ENTITY;
+  componeng::ecs::EntityID ambientUnder = componeng::ecs::INVALID_ENTITY; // the muffled copy
 };
 
 // Plays the footsteps while the player is walking on the ground, faster and
@@ -28,6 +30,9 @@ struct FootstepAudio {
 class FootstepSystem : public componeng::ecs::ISystem {
 public:
   void onUpdate(const componeng::ecs::SystemState &state) override;
+
+private:
+  float m_under = 0.0f; // 0 head above the water, 1 below (smoothed)
 };
 
 } // namespace forest

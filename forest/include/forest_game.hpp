@@ -1,16 +1,20 @@
 #pragma once
 
-#include "componeng/core/game.hpp"
+#include "componeng/core/plugin.hpp"
 
 namespace forest {
 
 // A walkable forest: heightfield terrain, photoscanned trees with LOD and wind,
 // instanced grass that follows the player, baked sun shadows, and a
-// first-person controller. Everything here is game code on top of the engine.
-class ForestGame : public componeng::core::IGame {
+// first-person controller. Everything here is game code on top of the engine,
+// packaged as a plugin: add it after DefaultPlugins.
+class ForestGame : public componeng::core::IPlugin {
 public:
-  void init(componeng::ecs::World &world) override;
-  void shutdown(componeng::ecs::World &world) override;
+  // Registers the game's components and systems.
+  void build(componeng::core::Engine &engine) override;
+  // Builds the world and creates the scene (the window and built-in assets
+  // exist by now).
+  void ready(componeng::ecs::World &world) override;
 };
 
 } // namespace forest

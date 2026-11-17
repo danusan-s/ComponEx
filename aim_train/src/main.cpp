@@ -1,5 +1,6 @@
+#include "componeng/core/default_plugins.hpp"
 #include "componeng/core/engine.hpp"
-#include "componeng/core/game.hpp"
+#include "componeng/core/plugin.hpp"
 
 #include "componeng/audio/audio_manager.hpp"
 #include "componeng/camera/main_camera.hpp"
@@ -20,7 +21,6 @@ using namespace componeng::audio;
 using namespace componeng::camera;
 using namespace componeng::core;
 using namespace componeng::ecs;
-using namespace componeng::input;
 using namespace componeng::physics;
 using namespace componeng::renderer;
 using namespace componeng::utils;
@@ -33,12 +33,18 @@ constexpr Vec3 kCameraRot = Vec3(0, -90, 0);
 constexpr Vec3 kFloorColor = Vec3(0.5f, 0.5f, 0.5f);
 constexpr Vec3 kOrbColor = Vec3(0.0f, 1.0f, 1.0f);
 
-class AimTrain : public IGame {
+class AimTrain : public IPlugin {
 public:
-  void init(World &world) override {
+  // Register what the game adds: components and systems.
+  void build(Engine &engine) override {
+    World &world = engine.world();
     world.registerComponent<aim_train::OrbComponent>();
     world.registerSystem<aim_train::PlayerController>(SystemGroup::Simulation);
     world.registerSystem<aim_train::AimSystem>(SystemGroup::Simulation);
+  }
+
+  // Audio and the default camera exist by now: create the scene.
+  void ready(World &world) override {
 
     auto &audioManager = world.getResource<AudioManager>();
 
@@ -116,17 +122,10 @@ public:
     }
   }
 
-  void shutdown(World &world) override {
-  }
 };
 
 int main() {
-  Engine &engine = Engine::get();
-  engine.init();
-
-  AimTrain game;
-  engine.run(game);
-
-  engine.shutdown();
+  Engine engine;
+  engine.add(DefaultPlugins{}).add(AimTrain{}).run();
   return 0;
 }

@@ -22,6 +22,10 @@ namespace {
 // ambience is mastered hot, so the footsteps get a gain above 1 and the
 // ambience sits low.
 constexpr float kAmbientVolume = 0.25f;
+// Under the surface the ambience is swapped (crossfaded, both tracks keep
+// playing in step) for a muffled copy made with ffmpeg ahead of time. That copy
+// is gained up in the file, so the same volume applies.
+constexpr float kMuffleRate = 10.0f;  // 1/s: how fast the crossfade follows the head
 constexpr float kFootstepVolume = 2.4f;
 // The wading recording is much hotter: its steps peak around -2 dB.
 constexpr float kWaterStepVolume = 0.6f;
@@ -50,6 +54,8 @@ void setupForestAudio(ecs::World &world) {
   // from disk; the footsteps are short enough to decode up front.
   audio.registerSound(assetPath("sounds/ambient_sounds.mp3").c_str(),
                       "forest_ambient", true);
+  audio.registerSound(assetPath("sounds/underwater_ambient.mp3").c_str(),
+                      "forest_underwater_ambient", true);
   audio.registerSound(assetPath("sounds/dirt_footsteps.mp3").c_str(),
                       "forest_footsteps");
   // Four minutes: decoded it would be tens of MB of PCM, so it streams.
@@ -62,6 +68,16 @@ void setupForestAudio(ecs::World &world) {
                                             .playOnAwake = true,
                                             .loop = true,
                                             .volume = kAmbientVolume,
+                                            .is3D = false});
+
+  // Plays all the time too, silent, so it is at the same point in the track as
+  // the other whenever the head goes under.
+  ecs::EntityID ambientUnder = world.createEntity();
+  world.addComponents(ambientUnder, core::TransformComponent{},
+                      audio::AudioComponent{.audioName = "forest_underwater_ambient",
+                                            .playOnAwake = true,
+                                            .loop = true,
+                                            .volume = 0.0f,
                                             .is3D = false});
 
   // Starts silent: FootstepSystem switches it on while the player walks.
@@ -98,7 +114,7 @@ void setupForestAudio(ecs::World &world) {
                                             .loop = true,
                                             .volume = kSwimUnderVolume,
                                             .is3D = false});
-  world.setResource(FootstepAudio{steps, splashes, swim, swimUnder});
+  world.setResource(FootstepAudio{steps, splashes, swim, swimUnder, ambient, ambientUnder});
 }
 
 void FootstepSystem::onUpdate(const ecs::SystemState &state) {
@@ -115,6 +131,12 @@ void FootstepSystem::onUpdate(const ecs::SystemState &state) {
   auto &swim = world.getComponent<audio::AudioComponent>(ids.swim);
   auto &swimUnder = world.getComponent<audio::AudioComponent>(ids.swimUnder);
   const float t = float(world.time);
+  const float dt = state.deltaTime;
+  if (!world.hasComponent<audio::AudioComponent>(ids.ambient) ||
+      !world.hasComponent<audio::AudioComponent>(ids.ambientUnder))
+    return;
+  auto &ambient = world.getComponent<audio::AudioComponent>(ids.ambient);
+  auto &ambientUnder = world.getComponent<audio::AudioComponent>(ids.ambientUnder);
 
   world.query()
       .read<PlayerComponent, core::TransformComponent>()
@@ -141,6 +163,13 @@ void FootstepSystem::onUpdate(const ecs::SystemState &state) {
             depthBelowSurface(tf.position + core::Vec3(0.0f, p.eye, 0.0f), t) > 0.0f;
         swim.play = stroking && !headUnder;
         swimUnder.play = stroking && headUnder;
+
+        // Ambience: crossfade to the muffled copy while the head is under. Equal
+        // power, so the level holds in the middle of the fade.
+        m_under += ((headUnder ? 1.0f : 0.0f) - m_under) * (1.0f - std::exp(-kMuffleRate * dt));
+        ambient.volume = kAmbientVolume * std::cos(m_under * 1.5707963f);
+        ambientUnder.volume = kAmbientVolume * std::sin(m_under * 1.5707963f);
+
         swim.pitch = swimUnder.pitch = std::clamp(speed / kSwimPace, 0.8f, 1.3f);
       });
 }

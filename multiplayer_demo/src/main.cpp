@@ -1,9 +1,11 @@
 #include "componeng/camera/main_camera.hpp"
+#include "componeng/core/default_plugins.hpp"
 #include "componeng/core/engine.hpp"
-#include "componeng/core/game.hpp"
+#include "componeng/core/plugin.hpp"
 #include "componeng/core/transform_component.hpp"
 #include "componeng/ecs/world.hpp"
-#include "componeng/net/network_system.hpp"
+#include "componeng/net/nat/nat_plugin.hpp"
+#include "componeng/net/net_plugin.hpp"
 #include "componeng/physics/collider_component.hpp"
 #include "componeng/physics/rigidbody_component.hpp"
 #include "componeng/renderer/component/material_component.hpp"
@@ -17,27 +19,31 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 using namespace componeng;
 using namespace multiplayer_demo;
 
 constexpr float kGroundSize = 40.0f;
 
-class MultiplayerDemo : public core::IGame {
+// The game, as a plugin: build() registers, ready() creates the starting scene.
+class MultiplayerDemo : public core::IPlugin {
 public:
   explicit MultiplayerDemo(LaunchConfig launch) : m_launch(std::move(launch)) {
   }
 
-  void init(ecs::World &world) override {
-    // Opt in to networking: creates the Network and Session resources and the
-    // system that updates them every frame.
-    net::installNetworking(world);
+  void build(core::Engine &engine) override {
+    ecs::World &world = engine.world();
+    // The Network and Session resources and the system that pumps them come
+    // from NetPlugin (added in main, before this plugin).
     world.setResource<LaunchConfig>(LaunchConfig(m_launch));
 
     world.registerComponent<LocalPlayerComponent>();
     world.registerSystem<PlayerController>(ecs::SystemGroup::Simulation);
     world.registerSystem<MultiplayerSystem>(ecs::SystemGroup::Simulation);
+  }
 
+  void ready(ecs::World &world) override {
     // A big cube as the ground, top surface at y = 0.
     ecs::EntityID ground = world.createEntity();
     world.addComponents(
@@ -54,48 +60,73 @@ public:
         physics::ColliderComponent{.type = physics::ColliderType::Box});
   }
 
-  void shutdown(ecs::World &) override {
-  }
-
 private:
   LaunchConfig m_launch;
 };
 
 static void usage(const char *exe) {
-  std::printf("Usage:\n"
-              "  %s                      host on UDP port %u, or join the instance\n"
-              "                          already hosting it on this machine\n"
-              "  %s <ip:port>            join a session, e.g. 127.0.0.1:%u\n"
-              "  %s <ip:port> <local>    join, using local UDP port <local>\n"
-              "  %s --port <n>           host on port <n>\n",
-              exe, unsigned(kDefaultPort), exe, unsigned(kDefaultPort), exe,
-              exe);
+  std::printf(
+      "LAN / same machine:\n"
+      "  %s                    host on UDP port %u, or join the instance\n"
+      "                        already hosting it on this machine\n"
+      "  %s <ip:port> [local]  join a host, e.g. 127.0.0.1:%u\n"
+      "  %s --port <n>         host on port <n>\n"
+      "Internet (STUN + invite codes; swap codes by hand, paste the other\n"
+      "player's code into the terminal):\n"
+      "  %s --nat              host\n"
+      "  %s --nat --join [CODE]  join; CODE is the host's invite code (or paste\n"
+      "                        it later)\n",
+      exe, unsigned(kDefaultPort), exe, unsigned(kDefaultPort), exe, exe, exe);
 }
 
 int main(int argc, char **argv) {
   LaunchConfig launch;
-  launch.autoJoinLocal = argc < 2;
-  if (argc >= 2) {
-    std::string first = argv[1];
-    if (first == "-h" || first == "--help") {
+  bool join = false;
+  bool portGiven = false;
+  std::vector<std::string> positional;
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "-h" || arg == "--help") {
       usage(argv[0]);
       return 0;
-    }
-    if (first == "--port" && argc >= 3) {
-      launch.port = uint16_t(std::atoi(argv[2]));
+    } else if (arg == "--nat") {
+      launch.nat = true;
+    } else if (arg == "--join") {
+      join = true;
+      // Optional value: the host's invite code.
+      if (i + 1 < argc && argv[i + 1][0] != '-')
+        launch.address = argv[++i];
+    } else if (arg == "--port" && i + 1 < argc) {
+      launch.port = uint16_t(std::atoi(argv[++i]));
+      portGiven = true;
     } else {
-      launch.host = false;
-      launch.address = first;
-      launch.port = argc >= 3 ? uint16_t(std::atoi(argv[2])) : 0;
+      positional.push_back(arg);
     }
   }
 
-  core::Engine &engine = core::Engine::get();
-  engine.init();
+  if (launch.nat) {
+    launch.host = !join;
+    if (join && !portGiven)
+      launch.port = 0;
+  } else if (!positional.empty()) {
+    // <ip:port> [local port]: join directly.
+    launch.host = false;
+    launch.address = positional[0];
+    launch.port = positional.size() >= 2 ? uint16_t(std::atoi(positional[1].c_str()))
+                                         : 0;
+  } else {
+    launch.autoJoinLocal = !portGiven;
+  }
 
-  MultiplayerDemo game(launch);
-  engine.run(game);
+  core::DefaultPlugins defaults;
+  defaults.window.title = "ComponEx multiplayer demo";
 
-  engine.shutdown();
+  core::Engine engine;
+  engine.add(defaults).add(net::NetPlugin{});
+  if (launch.nat) {
+    // Internet play: STUN and invite codes (creates the NatTraversal resource).
+    engine.add(net::NatPlugin{});
+  }
+  engine.add(MultiplayerDemo(launch)).run();
   return 0;
 }

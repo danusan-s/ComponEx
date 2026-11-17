@@ -4,6 +4,7 @@
 
 #include "componeng/core/transform_component.hpp"
 #include "componeng/ecs/world.hpp"
+#include "componeng/net/nat/invite_code.hpp"
 #include "componeng/net/network.hpp"
 #include "componeng/net/session.hpp"
 #include "componeng/renderer/component/material_component.hpp"
@@ -14,6 +15,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <iostream>
+#include <thread>
 
 namespace multiplayer_demo {
 
@@ -88,6 +92,41 @@ void MultiplayerSystem::onCreate(const ecs::SystemState &state) {
   config.protocolId = kProtocolId;
   bool host = launch.host;
   m_joinAddress = launch.address;
+
+  if (launch.nat) {
+    // NatPlugin made it before the network opens, which is when it has to
+    // exist (it wraps the socket). Players swap codes by hand, which can be
+    // slow, so be patient with connecting.
+    m_nat = &world.getResource<net::NatTraversal>();
+    config.connectTimeout = 60.0;
+    m_joinTimeout = 60.0;
+    m_joinAddress.clear();
+    m_pendingCode = launch.address;
+    m_nat->onDiscovery([this](bool ok, const net::NatInfo &info) {
+      m_natDone = true;
+      m_natOk = ok;
+      m_natType = info.type;
+      if (!ok) {
+        LOG_ERROR("STUN discovery failed: no server answered (offline?)");
+        return;
+      }
+      LOG_INFO("Public address %s, NAT type: %s",
+               info.publicAddress.toString().c_str(),
+               info.type == net::NatType::Cone        ? "cone (punch should work)"
+               : info.type == net::NatType::Symmetric ? "SYMMETRIC (will likely fail)"
+                                                      : "unknown");
+    });
+    // Read pasted invite codes from the terminal without blocking the frame.
+    m_terminal = std::make_shared<Terminal>();
+    std::thread([term = m_terminal] {
+      std::string line;
+      while (std::getline(std::cin, line)) {
+        std::lock_guard<std::mutex> lock(term->mutex);
+        term->lines.push_back(line);
+      }
+    }).detach();
+  }
+
   if (!network.open(launch.port, config)) {
     if (host && launch.autoJoinLocal) {
       // Someone on this machine already hosts that port: join them instead.
@@ -108,6 +147,10 @@ void MultiplayerSystem::onCreate(const ecs::SystemState &state) {
     }
   }
 
+  if (m_nat) {
+    m_nat->discoverPublicAddress();
+  }
+  m_hosting = host;
   if (host) {
     m_joinAddress.clear();
     net::SessionConfig sc;
@@ -116,6 +159,10 @@ void MultiplayerSystem::onCreate(const ecs::SystemState &state) {
     LOG_INFO("Hosting on UDP port %u; join with: MultiplayerDemo <this-ip>:%u",
              unsigned(network.localAddress().port()),
              unsigned(network.localAddress().port()));
+  } else if (m_nat) {
+    // Joining over the internet: wait for our own address first (the host needs
+    // our code), then join the code from the command line, or one pasted later.
+    m_status = "waiting for STUN...";
   } else {
     tryJoin(session);
   }
@@ -124,7 +171,9 @@ void MultiplayerSystem::onCreate(const ecs::SystemState &state) {
 void MultiplayerSystem::tryJoin(net::Session &session) {
   ++m_joinAttempts;
   m_retryAt = -1.0;
-  if (!session.join(m_joinAddress)) {
+  net::SessionConfig sc;
+  sc.joinTimeout = m_joinTimeout;
+  if (!session.join(m_joinAddress, sc)) {
     LOG_ERROR("Cannot join '%s' (expected a numeric ip:port)",
               m_joinAddress.c_str());
     m_status = "bad address '" + m_joinAddress + "'";
@@ -136,10 +185,61 @@ void MultiplayerSystem::tryJoin(net::Session &session) {
   }
 }
 
+void MultiplayerSystem::handleInviteCode(net::Session &session,
+                                         const std::string &text) {
+  net::Address peer;
+  if (!net::decodeInvite(text, peer)) {
+    LOG_ERROR("'%s' is not a valid invite code", text.c_str());
+    m_status = "invalid invite code";
+    return;
+  }
+  if (m_hosting) {
+    // The joiner's public address: send toward it so our router lets it in.
+    session.expectJoiner(peer);
+    LOG_INFO("Punching toward %s; the joiner can connect now",
+             peer.toString().c_str());
+    m_status = "waiting for " + peer.toString();
+  } else {
+    m_joinAddress = peer.toString();
+    m_joinAttempts = 0;
+    tryJoin(session);
+  }
+}
+
+void MultiplayerSystem::pollTerminal(net::Session &session) {
+  if (!m_terminal) {
+    return;
+  }
+  std::deque<std::string> lines;
+  {
+    std::lock_guard<std::mutex> lock(m_terminal->mutex);
+    lines.swap(m_terminal->lines);
+  }
+  for (const std::string &line : lines) {
+    if (line.find_first_not_of(" \t\r\n") != std::string::npos) {
+      handleInviteCode(session, line);
+    }
+  }
+}
+
 void MultiplayerSystem::onUpdate(const ecs::SystemState &state) {
   ecs::World &world = *state.world;
   auto &session = world.getResource<net::Session>();
 
+  pollTerminal(session);
+  if (m_nat && m_natDone && !m_hosting && !m_pendingCode.empty()) {
+    std::string code = std::move(m_pendingCode);
+    m_pendingCode.clear();
+    handleInviteCode(session, code);
+  }
+  if (m_nat && m_natDone && !m_printedCode && m_natOk) {
+    m_printedCode = true;
+    std::printf("\n=== Your invite code: %s ===\n%s\n\n",
+                m_nat->inviteCode().c_str(),
+                m_hosting ? "Send it to the joiner, then paste THEIR code here and press Enter."
+                          : "Send it to the host (who pastes it into their terminal).");
+    std::fflush(stdout);
+  }
   if (m_retryAt >= 0.0 && world.time >= m_retryAt &&
       session.state() == net::Session::State::Idle) {
     tryJoin(session);
@@ -275,11 +375,26 @@ void MultiplayerSystem::drawOverlay(ecs::World &world) {
     ImGui::Text("Session: peer %u%s", unsigned(session.self()),
                 session.isLeader() ? " (leader)" : "");
     ImGui::Text("Listening on %s", network.localAddress().toString().c_str());
+    if (m_nat && m_natOk)
+      ImGui::Text("Invite code: %s", m_nat->inviteCode().c_str());
     ImGui::Text("Other players: %zu", m_avatars.size());
     if (!m_players->synced())
       ImGui::Text("Syncing...");
   } else {
     ImGui::Text("Session: %s", m_status.c_str());
+  }
+  if (m_nat && !session.isActive()) {
+    if (!m_natDone)
+      ImGui::Text("STUN: asking for our public address...");
+    else if (!m_natOk)
+      ImGui::Text("STUN: failed (offline?)");
+    else {
+      ImGui::Text("Your invite code: %s", m_nat->inviteCode().c_str());
+      ImGui::Text("NAT: %s", m_natType == net::NatType::Cone ? "cone"
+                             : m_natType == net::NatType::Symmetric ? "SYMMETRIC"
+                                                                    : "unknown");
+      ImGui::Text("Paste the other player's code in the terminal");
+    }
   }
   ImGui::End();
 }

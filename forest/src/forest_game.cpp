@@ -10,9 +10,6 @@
 #include "grass.hpp"
 #include "lens_flare.hpp"
 #include "player_system.hpp"
-#ifdef FOREST_DEV_TOOLS
-#include "screenshot.hpp" // forest/dev/, not part of the repo (see forest/CMakeLists.txt)
-#endif
 #include "species_data.hpp"
 #include "water.hpp"
 
@@ -20,6 +17,7 @@
 #include "componeng/camera/camera_component.hpp"
 #include "componeng/camera/camera_system.hpp"
 #include "componeng/camera/main_camera.hpp"
+#include "componeng/core/engine.hpp"
 #include "componeng/core/transform_component.hpp"
 #include "componeng/ecs/world.hpp"
 #include "componeng/renderer/asset_manager.hpp"
@@ -245,9 +243,36 @@ void spawnLensFlare(ecs::World &world) {
 
 } // namespace
 
-void ForestGame::init(ecs::World &world) {
+void ForestGame::build(core::Engine &engine) {
+  ecs::World &world = engine.world();
   world.registerComponents<PlayerComponent, BillboardLodComponent, GrassChunkComponent>();
 
+  world.registerSystem<PlayerSystem>(ecs::SystemGroup::Simulation);
+  world.registerSystem<FootstepSystem>(ecs::SystemGroup::Simulation);
+  world.registerSystem<LensFlareSystem>(ecs::SystemGroup::Simulation);
+  world.registerSystem<BillboardLodSystem>(ecs::SystemGroup::Presentation);
+  world.registerSystem<UnderwaterSystem>(ecs::SystemGroup::Presentation);
+  world.registerSystem<GrassChunkSystem>(ecs::SystemGroup::Presentation);
+  // Last thing in the frame: waits out whatever is left of the frame budget.
+  world.registerSystem<FrameLimiterSystem>(ecs::SystemGroup::Presentation);
+  world.addSystemDependencies<FrameLimiterSystem, renderer::RenderSystem>();
+  // The camera's matrices must be built from where the player ended up this
+  // frame, not last frame.
+  world.addSystemDependencies<camera::CameraSystem, PlayerSystem>();
+  // The footsteps follow what the player did this frame, and the audio system
+  // applies them.
+  world.addSystemDependencies<FootstepSystem, PlayerSystem>();
+  world.addSystemDependencies<audio::AudioSystem, FootstepSystem>();
+  // The flare reads where the player ended up this frame.
+  world.addSystemDependencies<LensFlareSystem, PlayerSystem>();
+  // Culling must see which billboards were just shown or hidden.
+  world.addSystemDependencies<renderer::CullingSystem, BillboardLodSystem>();
+  // The fog, sky and sun must be set for this frame's camera before they are drawn.
+  world.addSystemDependencies<renderer::RenderSystem, UnderwaterSystem>();
+  world.addSystemDependencies<renderer::CullingSystem, GrassChunkSystem>();
+}
+
+void ForestGame::ready(ecs::World &world) {
   // The engine's depth pre-pass re-runs the vertex stage of every tree, grass blade and
   // terrain patch for a depth-only draw, so it is off unless FOREST_PREPASS=1.
   world.getResource<resources::RenderSettings>().depthPrepass = std::getenv("FOREST_PREPASS") != nullptr;
@@ -326,39 +351,6 @@ void ForestGame::init(ecs::World &world) {
   world.setResource(std::move(fw));
 
   setupForestAudio(world);
-
-  world.registerSystem<PlayerSystem>(ecs::SystemGroup::Simulation);
-  world.registerSystem<FootstepSystem>(ecs::SystemGroup::Simulation);
-  world.registerSystem<LensFlareSystem>(ecs::SystemGroup::Simulation);
-  world.registerSystem<BillboardLodSystem>(ecs::SystemGroup::Presentation);
-  world.registerSystem<UnderwaterSystem>(ecs::SystemGroup::Presentation);
-  world.registerSystem<GrassChunkSystem>(ecs::SystemGroup::Presentation);
-#ifdef FOREST_DEV_TOOLS
-  if (std::getenv("FOREST_SHOT")) {
-    world.registerSystem<ScreenshotSystem>(ecs::SystemGroup::Presentation);
-    world.addSystemDependencies<ScreenshotSystem, renderer::RenderSystem>();
-  }
-#endif
-  // Last thing in the frame: waits out whatever is left of the frame budget.
-  world.registerSystem<FrameLimiterSystem>(ecs::SystemGroup::Presentation);
-  world.addSystemDependencies<FrameLimiterSystem, renderer::RenderSystem>();
-  // The camera's matrices must be built from where the player ended up this
-  // frame, not last frame.
-  world.addSystemDependencies<camera::CameraSystem, PlayerSystem>();
-  // The footsteps follow what the player did this frame, and the audio system
-  // applies them.
-  world.addSystemDependencies<FootstepSystem, PlayerSystem>();
-  world.addSystemDependencies<audio::AudioSystem, FootstepSystem>();
-  // The flare reads where the player ended up this frame.
-  world.addSystemDependencies<LensFlareSystem, PlayerSystem>();
-  // Culling must see which billboards were just shown or hidden.
-  world.addSystemDependencies<renderer::CullingSystem, BillboardLodSystem>();
-  // The fog, sky and sun must be set for this frame's camera before they are drawn.
-  world.addSystemDependencies<renderer::RenderSystem, UnderwaterSystem>();
-  world.addSystemDependencies<renderer::CullingSystem, GrassChunkSystem>();
-}
-
-void ForestGame::shutdown(ecs::World &) {
 }
 
 } // namespace forest

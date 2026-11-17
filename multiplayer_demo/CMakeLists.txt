@@ -9,8 +9,9 @@ target_include_directories(MultiplayerDemo
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# ComponEngNet is the engine's optional networking library; it brings ComponEng
-# along. The demo needs a build with COMPONENG_NETWORKING=ON (the default).
+# ComponEngNet is the engine's optional networking library; ComponEngNetNat adds
+# STUN and invite codes on top (it brings ComponEngNet and ComponEng along). The
+# demo needs a build with COMPONENG_NETWORKING=ON (the default).
 target_link_libraries(MultiplayerDemo
-  PRIVATE ComponEngNet
+  PRIVATE ComponEngNetNat
 )

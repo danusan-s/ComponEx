@@ -1,5 +1,6 @@
+#include "componeng/core/default_plugins.hpp"
 #include "componeng/core/engine.hpp"
-#include "componeng/core/game.hpp"
+#include "componeng/core/plugin.hpp"
 
 #include "componeng/audio/audio_manager.hpp"
 #include "componeng/camera/main_camera.hpp"
@@ -132,9 +133,11 @@ static void generateRandomBody(World &world) {
       ColorComponent{.color = Vec4(color, 1.0f)});
 }
 
-class PlanetarySim : public IGame {
+class PlanetarySim : public IPlugin {
 public:
-  void init(World &world) override {
+  // Register what the game adds: components and systems.
+  void build(Engine &engine) override {
+    World &world = engine.world();
     world.registerComponent<planetary_sim::CelestialComponent>();
 
     world.registerSystem<planetary_sim::GravitySystem>(SystemGroup::Simulation);
@@ -144,7 +147,10 @@ public:
         SystemGroup::Simulation);
     world
         .addSystemDependencies<planetary_sim::CollisionSystem, PhysicsSystem>();
+  }
 
+  // Window, audio and the default camera exist by now: create the scene.
+  void ready(World &world) override {
     auto &audioManager = world.getResource<componeng::audio::AudioManager>();
     audioManager.registerSound(
         Utils::getAssetPath("assets/audio/boop.wav").c_str(), "boop");
@@ -174,17 +180,10 @@ public:
     }
   }
 
-  void shutdown(World &world) override {
-  }
 };
 
 int main() {
-  Engine &engine = Engine::get();
-  engine.init();
-
-  PlanetarySim game;
-  engine.run(game);
-
-  engine.shutdown();
+  Engine engine;
+  engine.add(DefaultPlugins{}).add(PlanetarySim{}).run();
   return 0;
 }

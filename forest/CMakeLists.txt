@@ -2,19 +2,10 @@ file(GLOB FOREST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
 
-# Optional developer tooling (the FOREST_SHOT screenshot system, helper scripts)
-# lives in forest/dev/, which is kept out of the repo. The demo builds without it.
-if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/dev)
-    file(GLOB FOREST_DEV_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/dev/*.cpp)
-    list(APPEND FOREST_SOURCES ${FOREST_DEV_SOURCES})
-endif()
+# forest/dev/ (the FOREST_SHOT screenshot tool, kept out of the repo) is not
+# built: it needs an engine frame-capture API that the engine no longer has.
 
 add_executable(ForestDemo ${FOREST_SOURCES})
-
-if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/dev)
-    target_include_directories(ForestDemo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/dev)
-    target_compile_definitions(ForestDemo PRIVATE FOREST_DEV_TOOLS)
-endif()
 
 target_include_directories(ForestDemo
     PRIVATE
