@@ -45,32 +45,38 @@ jobs:
             -DCOMPONENG_NETWORKING=ON \
             -DCOMPONENG_MARCH=x86-64-v3 \
             -DCOMPONENG_WERROR=OFF \
-            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
+            -DCMAKE_EXE_LINKER_FLAGS="-static"
 
       - name: Build
         run: cmake --build build --target MultiplayerDemo
 
       - name: Package
         run: |
+          # The exe is linked -static, so this should only find glfw3.dll (the
+          # engine links GLFW's DLL import library; it only needs system DLLs).
+          # It is also the safety net: if any library still comes in as a DLL
+          # (glslang, SPIRV-Tools...), it and its runtime (libwinpthread,
+          # libstdc++, libgcc_s) are copied too, recursively.
+          # Windows system DLLs are skipped, and so is vulkan-1.dll: that is the
+          # loader and has to be the one the GPU driver installed.
+          # Without libwinpthread-1.dll next to the exe, Windows picks whichever
+          # copy is first on PATH (Git, an old MinGW...) and fails with
+          # "clock_gettime64 could not be located".
           copy_runtime_dlls() {
-            local destination="$1"
+            local exe="$1"
+            local destination="$2"
             local dll
 
-            # Explicit runtime dependencies
-            for dll in \
-              glfw3.dll \
-              glslang.dll \
-              SPIRV.dll \
-              libglslang-default-resource-limits.dll
-            do
-              if [[ -f "$MSYSTEM_PREFIX/bin/$dll" ]]; then
-                cp "$MSYSTEM_PREFIX/bin/$dll" "$destination/"
-              fi
-            done
-
-            # SPIRV-Tools runtime dependencies
-            for dll in "$MSYSTEM_PREFIX"/bin/libSPIRV-Tools*.dll; do
-              [[ -f "$dll" ]] && cp "$dll" "$destination/"
+            ntldd -R "$exe" | awk '/=>/ && $3 != "not" {print $3}' | while read -r dll; do
+              dll="$(cygpath -u "$dll")"
+              case "$dll" in
+                "$MSYSTEM_PREFIX"/bin/*) ;;
+                *) continue ;;
+              esac
+              case "$(basename "$dll" | tr 'A-Z' 'a-z')" in
+                vulkan-1.dll) continue ;;
+              esac
+              cp -v "$dll" "$destination/"
             done
           }
 
@@ -81,7 +87,7 @@ jobs:
           cp multiplayer_demo/release/*.bat multiplayer_demo/release/README.txt dist/MultiplayerDemo/
           sed -i 's/$/\r/' dist/MultiplayerDemo/*.bat dist/MultiplayerDemo/README.txt
 
-          copy_runtime_dlls dist/MultiplayerDemo
+          copy_runtime_dlls dist/MultiplayerDemo/MultiplayerDemo.exe dist/MultiplayerDemo
 
           ntldd -R dist/MultiplayerDemo/MultiplayerDemo.exe || true
 
@@ -135,32 +141,38 @@ jobs:
             -DCOMPONENG_NETWORKING=OFF \
             -DCOMPONENG_MARCH=x86-64-v3 \
             -DCOMPONENG_WERROR=OFF \
-            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
+            -DCMAKE_EXE_LINKER_FLAGS="-static"
 
       - name: Build
         run: cmake --build build --target ForestDemo
 
       - name: Package
         run: |
+          # The exe is linked -static, so this should only find glfw3.dll (the
+          # engine links GLFW's DLL import library; it only needs system DLLs).
+          # It is also the safety net: if any library still comes in as a DLL
+          # (glslang, SPIRV-Tools...), it and its runtime (libwinpthread,
+          # libstdc++, libgcc_s) are copied too, recursively.
+          # Windows system DLLs are skipped, and so is vulkan-1.dll: that is the
+          # loader and has to be the one the GPU driver installed.
+          # Without libwinpthread-1.dll next to the exe, Windows picks whichever
+          # copy is first on PATH (Git, an old MinGW...) and fails with
+          # "clock_gettime64 could not be located".
           copy_runtime_dlls() {
-            local destination="$1"
+            local exe="$1"
+            local destination="$2"
             local dll
 
-            # Explicit runtime dependencies
-            for dll in \
-              glfw3.dll \
-              glslang.dll \
-              SPIRV.dll \
-              libglslang-default-resource-limits.dll
-            do
-              if [[ -f "$MSYSTEM_PREFIX/bin/$dll" ]]; then
-                cp "$MSYSTEM_PREFIX/bin/$dll" "$destination/"
-              fi
-            done
-
-            # SPIRV-Tools runtime dependencies
-            for dll in "$MSYSTEM_PREFIX"/bin/libSPIRV-Tools*.dll; do
-              [[ -f "$dll" ]] && cp "$dll" "$destination/"
+            ntldd -R "$exe" | awk '/=>/ && $3 != "not" {print $3}' | while read -r dll; do
+              dll="$(cygpath -u "$dll")"
+              case "$dll" in
+                "$MSYSTEM_PREFIX"/bin/*) ;;
+                *) continue ;;
+              esac
+              case "$(basename "$dll" | tr 'A-Z' 'a-z')" in
+                vulkan-1.dll) continue ;;
+              esac
+              cp -v "$dll" "$destination/"
             done
           }
 
@@ -170,7 +182,7 @@ jobs:
           cp -r engine/assets/. dist/Forest/assets/
           cp -r forest/assets/. dist/Forest/assets/
 
-          copy_runtime_dlls dist/Forest
+          copy_runtime_dlls dist/Forest/Forest.exe dist/Forest
 
           ntldd -R dist/Forest/Forest.exe || true
 
