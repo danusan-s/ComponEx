@@ -2,14 +2,15 @@ CMAKE := cmake
 CTEST := ctest
 BUILD_TYPE ?= Release
 
-# PROFILING=OFF builds the engine without the GPU/CPU timers and timing panes
-# (COMPONENG_PROFILING in engine/CMakeLists.txt), for benchmarking. It gets its
-# own build directory, so both configurations stay built and switching between
-# them does not recompile everything:  make ForestDemo PROFILING=OFF
-PROFILING ?= ON
-ifeq ($(PROFILING),OFF)
-BUILD_SUFFIX_PROF := -noprof
-else ifeq ($(PROFILING),ON)
+# PROFILING=ON builds the engine with the GPU/CPU timers and timing panes
+# (COMPONENG_PROFILING in engine/CMakeLists.txt). Off by default, so a plain
+# build is the one to benchmark. It gets its own build directory, so both
+# configurations stay built and switching between them does not recompile
+# everything:  make ForestDemo PROFILING=ON
+PROFILING ?= OFF
+ifeq ($(PROFILING),ON)
+BUILD_SUFFIX_PROF := -prof
+else ifeq ($(PROFILING),OFF)
 BUILD_SUFFIX_PROF :=
 else
 $(error PROFILING must be ON or OFF, got '$(PROFILING)')
@@ -17,7 +18,7 @@ endif
 
 # BACKEND picks the renderer backend (RENDERER_BACKEND in engine/CMakeLists.txt).
 # Vulkan is the default; it needs the Vulkan headers and glslang. Each backend has
-# its own build directory (build-vulkan, build; with PROFILING=OFF the -noprof
+# its own build directory (build-vulkan, build; with PROFILING=ON the -prof
 # variants):
 #   make ForestDemo                  # Vulkan
 #   make ForestDemo BACKEND=opengl   # OpenGL

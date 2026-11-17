@@ -29,6 +29,10 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-glfw
+            mingw-w64-ucrt-x86_64-vulkan-headers
+            mingw-w64-ucrt-x86_64-vulkan-loader
+            mingw-w64-ucrt-x86_64-glslang
+            mingw-w64-ucrt-x86_64-spirv-tools
             mingw-w64-ucrt-x86_64-ntldd
             zip
 
@@ -38,7 +42,7 @@ jobs:
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DRENDERER_BACKEND=opengl \
+            -DRENDERER_BACKEND=vulkan \
             -DCOMPONENG_NETWORKING=ON \
             -DCOMPONENG_MARCH=x86-64-v3 \
             -DCOMPONENG_WERROR=OFF \
@@ -62,13 +66,88 @@ jobs:
           ntldd -R dist/MultiplayerDemo/MultiplayerDemo.exe || true
           cd dist && zip -r MultiplayerDemo-windows-x64.zip MultiplayerDemo
 
+      # Upload the folder, not the zip: GitHub zips artifacts itself, so a zip
+      # here would download as a zip inside a zip. The .zip is for the release.
       - uses: actions/upload-artifact@v4
         with:
           name: MultiplayerDemo-windows-x64
-          path: dist/MultiplayerDemo-windows-x64.zip
+          path: |
+            dist
+            !dist/*.zip
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/MultiplayerDemo-windows-x64.zip
+
+  forest:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-glfw
+            mingw-w64-ucrt-x86_64-vulkan-headers
+            mingw-w64-ucrt-x86_64-vulkan-loader
+            mingw-w64-ucrt-x86_64-glslang
+            mingw-w64-ucrt-x86_64-spirv-tools
+            mingw-w64-ucrt-x86_64-ntldd
+            zip
+
+      # Forest is single-player, so networking is off: no ComponEngNet, and the
+      # top-level CMakeLists skips multiplayer_demo.
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DRENDERER_BACKEND=vulkan \
+            -DCOMPONENG_NETWORKING=OFF \
+            -DCOMPONENG_MARCH=x86-64-v3 \
+            -DCOMPONENG_WERROR=OFF \
+            -DCMAKE_EXE_LINKER_FLAGS="-static"
+
+      - name: Build
+        run: cmake --build build --target ForestDemo
+
+      # Utils::getAssetPath looks in assets/ next to the exe, so the engine's
+      # and the demo's asset trees are merged into one folder. The demo's
+      # compiled-in FOREST_ROOT_DIR (the runner's checkout) does not exist on
+      # the player's machine and is simply skipped.
+      - name: Package
+        run: |
+          mkdir -p dist/Forest/assets
+          cp build/forest/ForestDemo.exe dist/Forest/Forest.exe
+          cp -r engine/assets/. dist/Forest/assets/
+          cp -r forest/assets/. dist/Forest/assets/
+          cp "$MSYSTEM_PREFIX/bin/glfw3.dll" dist/Forest/
+          ntldd -R dist/Forest/Forest.exe || true
+          cd dist && zip -r Forest-windows-x64.zip Forest
+
+      # Upload the folder, not the zip: GitHub zips artifacts itself, so a zip
+      # here would download as a zip inside a zip. The .zip is for the release.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Forest-windows-x64
+          path: |
+            dist
+            !dist/*.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Forest-windows-x64.zip
