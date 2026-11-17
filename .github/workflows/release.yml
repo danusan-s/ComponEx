@@ -52,6 +52,8 @@ jobs:
           mkdir -p dist/MultiplayerDemo
           cp build/multiplayer_demo/MultiplayerDemo.exe dist/MultiplayerDemo/
           cp -r engine/assets dist/MultiplayerDemo/assets
+          # GLFW links as a DLL (-DGLFW_DLL), so it has to sit next to the exe.
+          cp "$MSYSTEM_PREFIX/bin/glfw3.dll" dist/MultiplayerDemo/
           # Anything listed here that is not a Windows system DLL has to ship too.
           ntldd -R dist/MultiplayerDemo/MultiplayerDemo.exe || true
           cd dist && zip -r MultiplayerDemo-windows-x64.zip MultiplayerDemo
