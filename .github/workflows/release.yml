@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-glfw
+            mingw-w64-ucrt-x86_64-ntldd
+            zip
+
+      # x86-64-v3 (AVX2) is any x86-64 CPU from about 2015 on. -static avoids
+      # shipping the MinGW runtime DLLs next to the exe.
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DRENDERER_BACKEND=opengl \
+            -DCOMPONENG_NETWORKING=ON \
+            -DCOMPONENG_MARCH=x86-64-v3 \
+            -DCOMPONENG_WERROR=OFF \
+            -DCMAKE_EXE_LINKER_FLAGS="-static"
+
+      - name: Build
+        run: cmake --build build --target MultiplayerDemo
+
+      - name: Package
+        run: |
+          mkdir -p dist/MultiplayerDemo
+          cp build/multiplayer_demo/MultiplayerDemo.exe dist/MultiplayerDemo/
+          cp -r engine/assets dist/MultiplayerDemo/assets
+          # Anything listed here that is not a Windows system DLL has to ship too.
+          ntldd -R dist/MultiplayerDemo/MultiplayerDemo.exe || true
+          cd dist && zip -r MultiplayerDemo-windows-x64.zip MultiplayerDemo
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MultiplayerDemo-windows-x64
+          path: dist/MultiplayerDemo-windows-x64.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MultiplayerDemo-windows-x64.zip
