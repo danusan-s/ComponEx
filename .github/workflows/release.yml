@@ -52,6 +52,10 @@ jobs:
           mkdir -p dist/MultiplayerDemo
           cp build/multiplayer_demo/MultiplayerDemo.exe dist/MultiplayerDemo/
           cp -r engine/assets dist/MultiplayerDemo/assets
+          # Launchers for LAN and for internet play (STUN + invite codes), and
+          # the how-to. Windows batch files and Notepad want CRLF line endings.
+          cp multiplayer_demo/release/*.bat multiplayer_demo/release/README.txt dist/MultiplayerDemo/
+          sed -i 's/$/\r/' dist/MultiplayerDemo/*.bat dist/MultiplayerDemo/README.txt
           # GLFW links as a DLL (-DGLFW_DLL), so it has to sit next to the exe.
           cp "$MSYSTEM_PREFIX/bin/glfw3.dll" dist/MultiplayerDemo/
           # Anything listed here that is not a Windows system DLL has to ship too.
