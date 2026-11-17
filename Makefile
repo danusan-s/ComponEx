@@ -15,12 +15,13 @@ else
 $(error PROFILING must be ON or OFF, got '$(PROFILING)')
 endif
 
-# BACKEND=vulkan builds against the Vulkan renderer backend (RENDERER_BACKEND in
-# engine/CMakeLists.txt; needs the Vulkan headers and glslang). Also its own build
-# directory (build-vulkan, or build-vulkan-noprof with PROFILING=OFF):
-#   make ForestDemo BACKEND=vulkan
-# Note the demo's FOREST_SHOT screenshot tool is OpenGL-only (glReadPixels).
-BACKEND ?= opengl
+# BACKEND picks the renderer backend (RENDERER_BACKEND in engine/CMakeLists.txt).
+# Vulkan is the default; it needs the Vulkan headers and glslang. Each backend has
+# its own build directory (build-vulkan, build; with PROFILING=OFF the -noprof
+# variants):
+#   make ForestDemo                  # Vulkan
+#   make ForestDemo BACKEND=opengl   # OpenGL
+BACKEND ?= vulkan
 ifeq ($(BACKEND),opengl)
 BUILD_SUFFIX_BACKEND :=
 else ifeq ($(BACKEND),vulkan)
@@ -65,3 +66,4 @@ endef
 $(eval $(call EXECUTABLE_template,AimTrain,aim_train))
 $(eval $(call EXECUTABLE_template,PlanetarySim,planetary_simulation))
 $(eval $(call EXECUTABLE_template,ForestDemo,forest))
+$(eval $(call EXECUTABLE_template,MultiplayerDemo,multiplayer_demo))
