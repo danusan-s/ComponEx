@@ -1,3 +1,4 @@
+
 name: Release
 
 on:
@@ -9,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  windows:
+  multiplayer_demo_windows:
     runs-on: windows-latest
     defaults:
       run:
@@ -36,8 +37,6 @@ jobs:
             mingw-w64-ucrt-x86_64-ntldd
             zip
 
-      # x86-64-v3 (AVX2) is any x86-64 CPU from about 2015 on. -static avoids
-      # shipping the MinGW runtime DLLs next to the exe.
       - name: Configure
         run: |
           cmake -B build -G Ninja \
@@ -46,28 +45,48 @@ jobs:
             -DCOMPONENG_NETWORKING=ON \
             -DCOMPONENG_MARCH=x86-64-v3 \
             -DCOMPONENG_WERROR=OFF \
-            -DCMAKE_EXE_LINKER_FLAGS="-static"
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
 
       - name: Build
         run: cmake --build build --target MultiplayerDemo
 
       - name: Package
         run: |
+          copy_runtime_dlls() {
+            local destination="$1"
+            local dll
+
+            # Explicit runtime dependencies
+            for dll in \
+              glfw3.dll \
+              glslang.dll \
+              SPIRV.dll \
+              libglslang-default-resource-limits.dll
+            do
+              if [[ -f "$MSYSTEM_PREFIX/bin/$dll" ]]; then
+                cp "$MSYSTEM_PREFIX/bin/$dll" "$destination/"
+              fi
+            done
+
+            # SPIRV-Tools runtime dependencies
+            for dll in "$MSYSTEM_PREFIX"/bin/libSPIRV-Tools*.dll; do
+              [[ -f "$dll" ]] && cp "$dll" "$destination/"
+            done
+          }
+
           mkdir -p dist/MultiplayerDemo
           cp build/multiplayer_demo/MultiplayerDemo.exe dist/MultiplayerDemo/
           cp -r engine/assets dist/MultiplayerDemo/assets
-          # Launchers for LAN and for internet play (STUN + invite codes), and
-          # the how-to. Windows batch files and Notepad want CRLF line endings.
+
           cp multiplayer_demo/release/*.bat multiplayer_demo/release/README.txt dist/MultiplayerDemo/
           sed -i 's/$/\r/' dist/MultiplayerDemo/*.bat dist/MultiplayerDemo/README.txt
-          # GLFW links as a DLL (-DGLFW_DLL), so it has to sit next to the exe.
-          cp "$MSYSTEM_PREFIX/bin/glfw3.dll" dist/MultiplayerDemo/
-          # Anything listed here that is not a Windows system DLL has to ship too.
+
+          copy_runtime_dlls dist/MultiplayerDemo
+
           ntldd -R dist/MultiplayerDemo/MultiplayerDemo.exe || true
+
           cd dist && zip -r MultiplayerDemo-windows-x64.zip MultiplayerDemo
 
-      # Upload the folder, not the zip: GitHub zips artifacts itself, so a zip
-      # here would download as a zip inside a zip. The .zip is for the release.
       - uses: actions/upload-artifact@v4
         with:
           name: MultiplayerDemo-windows-x64
@@ -81,7 +100,7 @@ jobs:
         with:
           files: dist/MultiplayerDemo-windows-x64.zip
 
-  forest:
+  forest_windows:
     runs-on: windows-latest
     defaults:
       run:
@@ -108,8 +127,6 @@ jobs:
             mingw-w64-ucrt-x86_64-ntldd
             zip
 
-      # Forest is single-player, so networking is off: no ComponEngNet, and the
-      # top-level CMakeLists skips multiplayer_demo.
       - name: Configure
         run: |
           cmake -B build -G Ninja \
@@ -118,27 +135,47 @@ jobs:
             -DCOMPONENG_NETWORKING=OFF \
             -DCOMPONENG_MARCH=x86-64-v3 \
             -DCOMPONENG_WERROR=OFF \
-            -DCMAKE_EXE_LINKER_FLAGS="-static"
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
 
       - name: Build
         run: cmake --build build --target ForestDemo
 
-      # Utils::getAssetPath looks in assets/ next to the exe, so the engine's
-      # and the demo's asset trees are merged into one folder. The demo's
-      # compiled-in FOREST_ROOT_DIR (the runner's checkout) does not exist on
-      # the player's machine and is simply skipped.
       - name: Package
         run: |
+          copy_runtime_dlls() {
+            local destination="$1"
+            local dll
+
+            # Explicit runtime dependencies
+            for dll in \
+              glfw3.dll \
+              glslang.dll \
+              SPIRV.dll \
+              libglslang-default-resource-limits.dll
+            do
+              if [[ -f "$MSYSTEM_PREFIX/bin/$dll" ]]; then
+                cp "$MSYSTEM_PREFIX/bin/$dll" "$destination/"
+              fi
+            done
+
+            # SPIRV-Tools runtime dependencies
+            for dll in "$MSYSTEM_PREFIX"/bin/libSPIRV-Tools*.dll; do
+              [[ -f "$dll" ]] && cp "$dll" "$destination/"
+            done
+          }
+
           mkdir -p dist/Forest/assets
+
           cp build/forest/ForestDemo.exe dist/Forest/Forest.exe
           cp -r engine/assets/. dist/Forest/assets/
           cp -r forest/assets/. dist/Forest/assets/
-          cp "$MSYSTEM_PREFIX/bin/glfw3.dll" dist/Forest/
+
+          copy_runtime_dlls dist/Forest
+
           ntldd -R dist/Forest/Forest.exe || true
+
           cd dist && zip -r Forest-windows-x64.zip Forest
 
-      # Upload the folder, not the zip: GitHub zips artifacts itself, so a zip
-      # here would download as a zip inside a zip. The .zip is for the release.
       - uses: actions/upload-artifact@v4
         with:
           name: Forest-windows-x64
