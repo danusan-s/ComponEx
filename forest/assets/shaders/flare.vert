@@ -1,4 +1,5 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
 // Lens flare, drawn as screen-space quads from ONE procedural entity (nine
 // instances, no per-instance data). Instance i is one element of the flare:
@@ -18,23 +19,15 @@
 
 layout(location = 0) in vec3 aPos; // quad corner, xy in [-1, 1]
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(std140, BIND(1, 0)) uniform Material {
+    float aspect;
+    float sunVisible;
 };
 
-uniform float aspect;     // viewport width / height (the engine letterboxes to 16:9)
-uniform float sunVisible; // 0..1, smoothed on the CPU
-
-flat out int Kind;
-out vec2 Local;
-out vec3 Color;
-out float Strength;
+layout(location = 0) flat out int Kind;
+layout(location = 1) out vec2 Local;
+layout(location = 2) out vec3 Color;
+layout(location = 3) out float Strength;
 
 // Per element: kind, position along the sun-to-mirror axis (0 = on the sun,
 // 1 = screen centre, 2 = the sun mirrored), half-height in NDC, tint, strength.
@@ -57,7 +50,7 @@ void collapse() {
 
 void main()
 {
-    int i = gl_InstanceID;
+    int i = INSTANCE_INDEX;
 
     // Where the sun is on screen. A point far along the light direction stands
     // in for the sun; behind the camera (w <= 0) there is no flare.

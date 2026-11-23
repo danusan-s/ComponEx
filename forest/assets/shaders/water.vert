@@ -1,4 +1,5 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
 // The sea. Only the long swells move the geometry: the grid is 2.5 m over the
 // island and 10 m beyond, so anything much shorter than ~40 m would alias. The shorter ripples live in the
@@ -12,17 +13,19 @@ layout(location = 2) in vec2 aUV;
 layout(location = 3) in mat4 instanceModel;
 layout(location = 7) in vec4 instanceColor;
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(std140, BIND(1, 0)) uniform Material {
+    float worldHalf;
+    float heightCells;
+    float waterLevel;
+    vec3 skyColor;
+    vec3 skyAmbient;
+    vec3 shallowColor;
+    vec3 deepColor;
+    vec3 airHorizon;
+    vec3 airSun;
 };
 
-out vec3 FragPos;
+layout(location = 0) out vec3 FragPos;
 
 const float G = 9.81;
 const int SWELLS = 3;

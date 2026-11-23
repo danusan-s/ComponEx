@@ -1,3 +1,15 @@
 [submodule "engine"]
 	path = engine
 	url = git@github.com:danusan-s/ComponEng.git
+[submodule "aim_train/engine"]
+	path = aim_train/engine
+	url = https://github.com/danusan-s/ComponEng.git
+[submodule "forest/engine"]
+	path = forest/engine
+	url = https://github.com/danusan-s/ComponEng.git
+[submodule "multiplayer_demo/engine"]
+	path = multiplayer_demo/engine
+	url = https://github.com/danusan-s/ComponEng.git
+[submodule "planetary_simulation/engine"]
+	path = planetary_simulation/engine
+	url = https://github.com/danusan-s/ComponEng.git

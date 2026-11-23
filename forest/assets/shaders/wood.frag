@@ -1,33 +1,26 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
-in vec3 FragPos;
-in vec3 Normal;
-in vec2 UV;
-in vec3 Tint;
-in float Vis;
-in float Height;
-flat in float LodFade;
+layout(location = 0) in vec3 FragPos;
+layout(location = 1) in vec3 Normal;
+layout(location = 2) in vec2 UV;
+layout(location = 3) in vec3 Tint;
+layout(location = 4) in float Vis;
+layout(location = 6) in float Height;
+layout(location = 5) flat in float LodFade;
 
-out vec4 FragColor;
+layout(location = 0) out vec4 FragColor;
 
-uniform sampler2D albedoMap;   // sRGB
-uniform sampler2D normalMap;   // OpenGL (+Y) tangent-space
-uniform sampler2D metallicMap; // ARM: R = occlusion, G = roughness (slot reused)
+layout(BIND(1, 1)) uniform sampler2D albedoMap;
+layout(BIND(1, 2)) uniform sampler2D normalMap;
+layout(BIND(1, 3)) uniform sampler2D metallicMap;
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(std140, BIND(1, 0)) uniform Material {
+    float windAmp;
+    float canopyShade;
+    vec3 skyAmbient;
+    vec3 groundAmbient;
 };
-
-uniform vec3 skyAmbient;
-uniform vec3 groundAmbient;
-// 1 for trees: the lower trunk sits under its own crown and its neighbours'.
-uniform float canopyShade;
 
 const float PI = 3.14159265;
 

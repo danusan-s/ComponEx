@@ -1,0 +1,44 @@
+# Curated rather than broad: every check here maps to a defect class that has
+# actually shown up in this codebase. Naming enforcement
+# (readability-identifier-naming) is deliberately not enabled yet -- it has a
+# real backlog and should land as its own change.
+#
+# Deliberately NOT enabled:
+#   modernize-use-braced-init-list  - pure style, the codebase consistently
+#                                     uses functional init and nothing narrows
+#   google-explicit-constructor     - core::Name's implicit ctors are
+#                                     intentional, they keep component
+#                                     literals readable
+#   cppcoreguidelines-pro-type-*    - archetype storage is memcpy/void* by
+#                                     design, this would be all false positives
+#   *-avoid-magic-numbers           - too noisy for math and renderer code
+
+Checks: >
+  -*,
+  bugprone-copy-constructor-init,
+  bugprone-macro-parentheses,
+  bugprone-suspicious-memset-usage,
+  bugprone-undefined-memory-manipulation,
+  bugprone-use-after-move,
+  cppcoreguidelines-special-member-functions,
+  misc-unused-parameters,
+  misc-unused-using-decls,
+  modernize-use-equals-default,
+  modernize-use-equals-delete,
+  modernize-use-nullptr,
+  modernize-use-override,
+  performance-for-range-copy,
+  performance-unnecessary-value-param,
+  readability-const-return-type,
+  readability-misleading-indentation
+
+# Only our headers; vendored code under third_party is not ours to fix.
+HeaderFilterRegex: 'include/componeng/.*'
+
+CheckOptions:
+  # A polymorphic base whose only special member is `virtual ~I() = default` is
+  # correct as-is; flagging it would mean boilerplate on every interface. The
+  # check still catches types that actually own a resource, which is the shape
+  # that caused the GL handle double-free.
+  - key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor
+    value: 'true'

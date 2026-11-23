@@ -1,4 +1,5 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
 // The sea. The surface normal is built from three layers:
 //   - the three long swells, which also move the geometry (water.vert);
@@ -22,33 +23,23 @@
 //     steepest crests out at sea.
 // Drawn blended, after the terrain and the sky.
 
-in vec3 FragPos;
+layout(location = 0) in vec3 FragPos;
 
-out vec4 FragColor;
+layout(location = 0) out vec4 FragColor;
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(BIND(1, 1)) uniform sampler2D heightMap;
+
+layout(std140, BIND(1, 0)) uniform Material {
+    float worldHalf;
+    float heightCells;
+    float waterLevel;
+    vec3 skyColor;
+    vec3 skyAmbient;
+    vec3 shallowColor;
+    vec3 deepColor;
+    vec3 airHorizon;
+    vec3 airSun;
 };
-
-uniform sampler2D heightMap; // R32F terrain heights, (cells + 1)^2, row = z
-uniform float worldHalf;
-uniform float heightCells;
-uniform float waterLevel;    // the still surface, metres
-uniform vec3 skyColor;       // the sky's zenith colour, reflected
-uniform vec3 skyAmbient;
-uniform vec3 shallowColor;   // linear
-uniform vec3 deepColor;
-// The sky above the water as the forest has it by day (fogColor and lightColor
-// turn into murk under the surface, but the sky seen through the surface from
-// below, Snell's window, is still the real one).
-uniform vec3 airHorizon;
-uniform vec3 airSun;
 
 const float PI = 3.14159265;
 const float G = 9.81;

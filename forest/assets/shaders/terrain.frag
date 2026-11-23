@@ -1,38 +1,27 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
-in vec3 FragPos;
-in vec3 Normal;
-in vec2 Bake;
-in vec3 Tint;
+layout(location = 0) in vec3 FragPos;
+layout(location = 1) in vec3 Normal;
+layout(location = 2) in vec2 Bake;
+layout(location = 3) in vec3 Tint;
 
-out vec4 FragColor;
+layout(location = 0) out vec4 FragColor;
 
 // The engine's PBR material path binds five texture slots; this shader reuses
 // them for its own layers:
-uniform sampler2D albedoMap;    // forest floor albedo (sRGB)
-uniform sampler2D normalMap;    // forest floor normal
-uniform sampler2D metallicMap;  // forest floor ARM: R = occlusion, G = roughness
-uniform sampler2D roughnessMap; // rock albedo (sRGB)
-uniform sampler2D aoMap;        // rock normal
+layout(BIND(1, 1)) uniform sampler2D albedoMap;
+layout(BIND(1, 2)) uniform sampler2D normalMap;
+layout(BIND(1, 3)) uniform sampler2D metallicMap;
+layout(BIND(1, 4)) uniform sampler2D roughnessMap;
+layout(BIND(1, 5)) uniform sampler2D aoMap;
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(std140, BIND(1, 0)) uniform Material {
+    float farGrass;
+    float waterLevel;
+    vec3 skyAmbient;
+    vec3 groundAmbient;
 };
-
-uniform vec3 skyAmbient;
-uniform vec3 groundAmbient;
-// 1: beyond the grass the ground turns the colour of grass seen from afar, so a
-// meadow reads as one where the blades have faded out.
-uniform float farGrass;
-// The sea's mean surface (metres). Ground under it is seen through the water:
-// darker and bluer with depth, with the sun's light bunched into caustics.
-uniform float waterLevel;
 
 // The sea's three long swells, as in water.vert (keep the two equal): where the
 // surface really is, so ground the water has drawn back from is dry.

@@ -1,4 +1,5 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
 // Distant-tree billboards. One quad per tree, covering the whole tree, that
 // stays upright and turns to face the camera. The quad shows a baked view of
@@ -18,34 +19,30 @@ layout(location = 2) in vec2 aUV;
 layout(location = 3) in mat4 instanceModel;
 layout(location = 7) in vec4 instanceColor; // rgb tint, a = baked sun visibility
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(std140, BIND(1, 0)) uniform Material {
+    float windAmp;
+    float views;
+    float atlasCols;
+    float atlasRows;
+    float crownCenterY;
+    float crownRadius;
+    float crownHalfH;
+    float crownBottom;
+    float crownTop;
+    vec3 skyAmbient;
+    vec3 groundAmbient;
 };
 
-uniform float windAmp;
-uniform float views;        // views around the tree
-uniform float crownCenterY; // model space; the shading's crown ellipsoid
-uniform float crownRadius;
-uniform float crownHalfH;
-uniform float crownBottom;
-uniform float crownTop;
-
-out vec3 FragPos;
-out vec2 UV;
-out vec2 CrownQ;           // position across the crown, -1..1 on both axes
-out vec3 Right;
-out vec3 Toward;           // horizontal, from the tree to the camera
-out vec3 Tint;
-out float Vis;
-out float HeightT;
-flat out vec2 Frames;      // the two views, as indices
-flat out float Blend;      // weight of the second
+layout(location = 0) out vec3 FragPos;
+layout(location = 1) out vec2 UV;
+layout(location = 2) out vec2 CrownQ;
+layout(location = 3) out vec3 Right;
+layout(location = 4) out vec3 Toward;
+layout(location = 5) out vec3 Tint;
+layout(location = 6) out float Vis;
+layout(location = 7) out float HeightT;
+layout(location = 8) flat out vec2 Frames;
+layout(location = 10) flat out float Blend;
 
 const float TAU = 6.28318530718;
 

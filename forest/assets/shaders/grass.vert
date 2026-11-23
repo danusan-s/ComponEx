@@ -1,8 +1,9 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
 // One grass tuft = a small mesh of tapered blades (built in C++), drawn once per
 // instance by a ProceduralInstancesComponent entity: there is no per-instance
-// data at all. Everything about a tuft is derived here from gl_InstanceID.
+// data at all. Everything about a tuft is derived here from INSTANCE_INDEX.
 //
 //  - Position: either a fixed chunk of the world (chunkSize > 0: a jittered grid
 //    inside the chunk's own square; the engine culls the chunks that are out of
@@ -26,40 +27,33 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aUV; // x = blade index + 0.9 * (0..1 across the blade), y = 0 root .. 1 tip
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(BIND(1, 1)) uniform sampler2D heightMap;
+layout(BIND(1, 2)) uniform sampler2D grassMask;
+
+layout(std140, BIND(1, 0)) uniform Material {
+    float worldHalf;
+    float heightCells;
+    float tuftSide;
+    float period;
+    float chunkSize;
+    vec3 chunkInfo;
+    float fadeInStart;
+    float fadeInEnd;
+    float fadeStart;
+    float fadeEnd;
+    vec3 debugTint;
+    float debugBands;
+    float bladeLod;
+    vec3 skyAmbient;
+    vec3 groundAmbient;
 };
 
-uniform sampler2D heightMap; // R32F, (cells + 1)^2, row = z
-uniform sampler2D grassMask; // RGBA8 over the whole world
-
-uniform float worldHalf;  // metres from the origin to a world edge
-uniform float heightCells; // quads per edge of the height map
-uniform float tuftSide;   // tufts per side of the pool: side * side instances
-uniform float period;     // metres covered by the repeating pool
-uniform float chunkSize;  // 0: a wrapped pool (above). Otherwise this draw is one fixed chunk of the
-uniform vec3 chunkInfo;   // world, chunkSize metres square: xy = its corner's world xz, z = seed offset
-uniform float fadeInStart; // tufts nearer than this are not drawn by this pool, and
-uniform float fadeInEnd;   // grow from nothing to full size by this (equal: no growing)
-uniform float fadeStart;
-uniform float fadeEnd;
-uniform vec3 debugTint;   // (1, 1, 1) normally; FOREST_GRASS_DEBUG colours each pool
-uniform float debugBands; // 1: colour by distance band (FOREST_GRASS_DEBUG=2): green < 24 m,
-                          // yellow < 37, orange < 58, red < 93, purple beyond
-uniform float bladeLod;    // 1: blades drop out with distance, the rest grow to make up
-
-out vec3 FragPos;
-out vec3 BladeNormal;
-out vec3 Tint;
-out vec2 Light;
-out float BladeRand;
-out float Along; // 0 root .. 1 tip
+layout(location = 0) out vec3 FragPos;
+layout(location = 1) out vec3 BladeNormal;
+layout(location = 2) out vec3 Tint;
+layout(location = 3) out vec2 Light;
+layout(location = 4) out float BladeRand;
+layout(location = 5) out float Along;
 
 // --- integer hash: every per-tuft random comes from the instance id ---------
 uint pcg(uint v) {
@@ -125,7 +119,7 @@ void cull() {
 
 void main()
 {
-    uint localId = uint(gl_InstanceID);
+    uint localId = INSTANCE_INDEX;
     uint id = localId;  // what every random below comes from
     float side = tuftSide;
     vec2 cell = vec2(float(localId % uint(side)), float(localId / uint(side)));

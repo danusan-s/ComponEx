@@ -1,39 +1,39 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
 // Distant-tree billboards (see billboard.vert). The atlas holds flat albedo, so
 // the lighting is the foliage shader's, applied to a normal the quad does not
 // have: each pixel is treated as a point on the crown's ellipsoid, facing out
 // from its middle, so the tree is lit as a soft volume like the 3D ones.
 
-in vec3 FragPos;
-in vec2 UV;
-in vec2 CrownQ;
-in vec3 Right;
-in vec3 Toward;
-in vec3 Tint;
-in float Vis;
-in float HeightT;
-flat in vec2 Frames;
-flat in float Blend;
+layout(location = 0) in vec3 FragPos;
+layout(location = 1) in vec2 UV;
+layout(location = 2) in vec2 CrownQ;
+layout(location = 3) in vec3 Right;
+layout(location = 4) in vec3 Toward;
+layout(location = 5) in vec3 Tint;
+layout(location = 6) in float Vis;
+layout(location = 7) in float HeightT;
+layout(location = 8) flat in vec2 Frames;
+layout(location = 10) flat in float Blend;
 
-out vec4 FragColor;
+layout(location = 0) out vec4 FragColor;
 
-uniform sampler2D albedoMap; // RGBA: the views side by side, sRGB colour + coverage
-uniform float atlasCols;
-uniform float atlasRows;
+layout(BIND(1, 1)) uniform sampler2D albedoMap;
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(std140, BIND(1, 0)) uniform Material {
+    float windAmp;
+    float views;
+    float atlasCols;
+    float atlasRows;
+    float crownCenterY;
+    float crownRadius;
+    float crownHalfH;
+    float crownBottom;
+    float crownTop;
+    vec3 skyAmbient;
+    vec3 groundAmbient;
 };
-
-uniform vec3 skyAmbient;
-uniform vec3 groundAmbient;
 
 vec3 aces(vec3 x) {
     x *= 0.8;

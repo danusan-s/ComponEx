@@ -1,4 +1,5 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
 // Bark, logs, stumps and rocks. Trees sway with the wind (windAmp > 0); the
 // foliage shader applies the identical sway so leaves stay attached to the
@@ -12,25 +13,20 @@ layout(location = 3) in mat4 instanceModel;
 layout(location = 7) in vec4 instanceColor; // rgb tint, a = baked sun visibility
 layout(location = 8) in float instanceFade;  // LOD cross-fade, 0 = none
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(std140, BIND(1, 0)) uniform Material {
+    float windAmp;
+    float canopyShade;
+    vec3 skyAmbient;
+    vec3 groundAmbient;
 };
 
-uniform float windAmp;
-
-out vec3 FragPos;
-out vec3 Normal;
-out vec2 UV;
-out vec3 Tint;
-out float Vis;
-flat out float LodFade;
-out float Height;
+layout(location = 0) out vec3 FragPos;
+layout(location = 1) out vec3 Normal;
+layout(location = 2) out vec2 UV;
+layout(location = 3) out vec3 Tint;
+layout(location = 4) out float Vis;
+layout(location = 5) flat out float LodFade;
+layout(location = 6) out float Height;
 
 vec3 sway(vec3 base, float h) {
     float k = h * 0.1;

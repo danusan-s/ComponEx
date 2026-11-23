@@ -1,0 +1,10 @@
+# Point clangd at CMake's generated compile_commands.json (CMakeLists sets
+# CMAKE_EXPORT_COMPILE_COMMANDS). This is per-file accurate -- correct defines,
+# include paths and flags per target -- unlike a flat compile_flags.txt.
+# Requires configuring once: cmake -S . -B build
+CompileFlags:
+  CompilationDatabase: build
+  # Strip -Werror for the editor only; the real build keeps it. clang is
+  # stricter than gcc on vendored headers (miniaudio, stb), and with -Werror
+  # those turn into fatal errors that stop clangd analysing the file at all.
+  Remove: [-Werror]

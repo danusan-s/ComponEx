@@ -1,17 +1,22 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
 // Full-screen triangle with no vertex data: three vertices cover the viewport
-// (positions come from gl_VertexID), and each fragment is given the world
+// (positions come from VERTEX_INDEX), and each fragment is given the world
 // direction it looks along, so the sky needs no mesh.
 
-out vec3 fragDir;
+layout(location = 0) out vec3 fragDir;
 
-uniform mat4 invSkyViewProj; // inverse(projection * rotation-only view)
+layout(std140, BIND(1, 0)) uniform Material {
+    mat4 invSkyViewProj;
+    vec3 skyColor;
+    vec3 horizonColor;
+};
 
 void main()
 {
-    // gl_VertexID 0, 1, 2 -> (0,0), (2,0), (0,2) -> clip (-1,-1), (3,-1), (-1,3)
-    vec2 uv = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    // VERTEX_INDEX 0, 1, 2 -> (0,0), (2,0), (0,2) -> clip (-1,-1), (3,-1), (-1,3)
+    vec2 uv = vec2((VERTEX_INDEX << 1) & 2, VERTEX_INDEX & 2);
     vec2 ndc = uv * 2.0 - 1.0;
 
     // Unproject a point on the pixel's ray. The view has no translation, so

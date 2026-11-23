@@ -1,11 +1,12 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
-flat in int Kind;
-in vec2 Local;  // [-1, 1] across the quad
-in vec3 Color;
-in float Strength;
+layout(location = 0) flat in int Kind;
+layout(location = 1) in vec2 Local;
+layout(location = 2) in vec3 Color;
+layout(location = 3) in float Strength;
 
-out vec4 FragColor;
+layout(location = 0) out vec4 FragColor;
 
 // Hexagon "distance": 1.0 on the edge, so a lens-aperture ghost can be shaped
 // with the same smoothsteps as a disc.

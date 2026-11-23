@@ -1,26 +1,32 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
-in vec3 FragPos;
-in vec3 BladeNormal;
-in vec3 Tint;
-in vec2 Light;
-in float BladeRand;
-in float Along;
+layout(location = 0) in vec3 FragPos;
+layout(location = 1) in vec3 BladeNormal;
+layout(location = 2) in vec3 Tint;
+layout(location = 3) in vec2 Light;
+layout(location = 4) in float BladeRand;
+layout(location = 5) in float Along;
 
-out vec4 FragColor;
+layout(location = 0) out vec4 FragColor;
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(std140, BIND(1, 0)) uniform Material {
+    float worldHalf;
+    float heightCells;
+    float tuftSide;
+    float period;
+    float chunkSize;
+    vec3 chunkInfo;
+    float fadeInStart;
+    float fadeInEnd;
+    float fadeStart;
+    float fadeEnd;
+    vec3 debugTint;
+    float debugBands;
+    float bladeLod;
+    vec3 skyAmbient;
+    vec3 groundAmbient;
 };
-
-uniform vec3 skyAmbient;
-uniform vec3 groundAmbient;
 
 float hash12(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);

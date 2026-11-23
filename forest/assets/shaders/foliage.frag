@@ -1,32 +1,29 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
-in vec3 FragPos;
-in vec3 Normal;
-in vec3 CrownNormal;
-in vec2 UV;
-in vec3 Tint;
-in float Vis;
-in float CrownT;
-in float HeightT;
+layout(location = 0) in vec3 FragPos;
+layout(location = 1) in vec3 Normal;
+layout(location = 2) in vec3 CrownNormal;
+layout(location = 3) in vec2 UV;
+layout(location = 4) in vec3 Tint;
+layout(location = 5) in float Vis;
+layout(location = 6) in float CrownT;
+layout(location = 7) in float HeightT;
 
-out vec4 FragColor;
+layout(location = 0) out vec4 FragColor;
 
-uniform sampler2D albedoMap; // RGBA, sRGB colour + coverage
+layout(BIND(1, 1)) uniform sampler2D albedoMap;
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(std140, BIND(1, 0)) uniform Material {
+    float windAmp;
+    vec3 crownCenter;
+    float crownRadius;
+    float crownBottom;
+    float crownTop;
+    float crownBlend;
+    vec3 skyAmbient;
+    vec3 groundAmbient;
 };
-
-uniform vec3 skyAmbient;
-uniform vec3 groundAmbient;
-// How much the card normal is replaced by the crown normal (1 = pure volume).
-uniform float crownBlend;
 
 vec3 aces(vec3 x) {
     x *= 0.8;

@@ -1,4 +1,5 @@
-#version 330 core
+#version 460
+#include "frame_data.glsl"
 
 // Alpha-cut leaf / twig cards (trees, ferns, shrubs). Besides the shared wind
 // sway it adds per-card flutter, and hands the fragment shader a "crown
@@ -14,30 +15,25 @@ layout(location = 2) in vec2 aUV;
 layout(location = 3) in mat4 instanceModel;
 layout(location = 7) in vec4 instanceColor; // rgb tint, a = baked sun visibility
 
-layout(std140) uniform FrameData {
-    mat4 viewProj;
-    vec3 cameraPos;      float time;
-    vec3 lightDir;       float fogDensity;
-    vec3 lightColor;     float fogStart;
-    vec3 ambientColor;   float ambientStrength;
-    vec4 fogColor;
-    float fogEnd;
+layout(std140, BIND(1, 0)) uniform Material {
+    float windAmp;
+    vec3 crownCenter;
+    float crownRadius;
+    float crownBottom;
+    float crownTop;
+    float crownBlend;
+    vec3 skyAmbient;
+    vec3 groundAmbient;
 };
 
-uniform float windAmp;
-uniform vec3 crownCenter;   // model space
-uniform float crownRadius;  // model space
-uniform float crownBottom;  // model-space y range of the foliage
-uniform float crownTop;
-
-out vec3 FragPos;
-out vec3 Normal;
-out vec3 CrownNormal;
-out vec2 UV;
-out vec3 Tint;
-out float Vis;
-out float CrownT;   // 0 at the crown's centre, 1 at its surface
-out float HeightT;  // 0 at the lowest foliage, 1 at the top
+layout(location = 0) out vec3 FragPos;
+layout(location = 1) out vec3 Normal;
+layout(location = 2) out vec3 CrownNormal;
+layout(location = 3) out vec2 UV;
+layout(location = 4) out vec3 Tint;
+layout(location = 5) out float Vis;
+layout(location = 6) out float CrownT;
+layout(location = 7) out float HeightT;
 
 vec3 sway(vec3 base, float h) {
     float k = h * 0.1;
