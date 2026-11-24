@@ -4,7 +4,7 @@ CTEST := ctest
 BUILD_TYPE ?= Release
 PROFILING ?= OFF
 BACKEND ?= vulkan
-TARGET ?=ForestDemo
+TARGET ?= ForestDemo
 
 # Configuration validation
 ifeq ($(PROFILING),ON)
